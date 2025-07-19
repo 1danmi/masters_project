@@ -3,7 +3,6 @@ import shelve
 from pathlib import Path
 from typing import Self, Final
 
-import torch
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -11,10 +10,8 @@ from data_models import Embeddings, TokenEntry
 from src.config import config
 from src.data_models import TokenEntries
 from src.utils.tf_utils import get_bow_idf_dict
-from src.utils.models_utils import get_bert_tokenizer, get_bert_model
+from src.utils.models_utils import get_bert_tokenizer, get_bert_model, BERT_VECTOR_SIZE, get_bert_vec
 
-BERT_VECTOR_SIZE: Final[int] = 768
-BERT_PRETRAINED_NAME: Final[str] = "bert-base-uncased"
 ACCEPT_THRESHOLD: Final[float] = config().accept_threshold
 RADIUS: Final[float] = config().radius
 
@@ -96,46 +93,15 @@ class Bert2VecModel:
     def get_entries_by_bert(
         self, token: str, sentence: str, max_results: int | None = None
     ) -> list[tuple[TokenEntry, float]]:
-        # 1. Load the BERT tokenizer and model.
-        tokenizer = get_bert_tokenizer(BERT_PRETRAINED_NAME)
-        model = get_bert_model(BERT_PRETRAINED_NAME)
-
-        # 2. Convert the sentence to tokens as PyTorch tensors.
-        inputs = tokenizer(sentence, return_tensors="pt")
-
-        # 3. Run the sentence through the BERT model without back-propagation.
-        with torch.no_grad():
-            outputs = model(**inputs)
-
-        # 4. Since BERT doesn't have an output layer, the last hidden layer is our output.
-        output = outputs.last_hidden_state
-
-        # 5. We want to find the specific vector created for our token, so we first need to re-tokenize the sentence
-        # to split it using BERT's splitting rules.
-        sentence_tokens = tokenizer.tokenize(sentence)
-        # 6. Then We convert the tokens to their IDs.
-        sentence_token_ids = tokenizer.convert_tokens_to_ids(sentence_tokens)
-        # 7. Retrieve the ID of our specific token.
-        token_id = tokenizer.convert_tokens_to_ids(token)
-
-        # 8. We try to extract the token index from the sentence (if it exists in the sentence).
-        try:
-            token_index = sentence_token_ids.index(token_id)
-        except ValueError:
-            raise ValueError(f"Token '{token}' not found in the sentence '{sentence}'")
-
-        # 9. Extract the specific embedding for our token.
-        bert_vector = output[0, token_index, :].numpy()
-
+        bert_vector = get_bert_vec(token=token, sentence=sentence)
         results = []
-
-        # 10. Now we want to find calculate how similar are our embeddings to the BERT embedding we got.
+        # We want to find calculate how similar are our embeddings to the BERT embedding we got.
         if token in self._embeddings:
             for row in self._embeddings[token]:
                 similarity = cosine_similarity([bert_vector], [row.vec])[0][0]
                 results.append((row, similarity))
 
-        # 11. Sort the results by their similarity (the most similar first).
+        # Sort the results by their similarity (the most similar first).
         sorted_results = sorted(results, key=lambda x: x[1], reverse=True)
 
         return sorted_results[:max_results] if max_results else sorted_results
@@ -143,8 +109,8 @@ class Bert2VecModel:
     def get_entries_by_bow_bm25(
         self, token: str, bow: list[str], k1: float = 1.5, max_results: int | None = None
     ) -> list[tuple[TokenEntry, float]]:
-        if token not in bow:
-            raise ValueError(f"Token '{token}' must be in the bag of words (BOW).")
+        # if token not in bow:
+        #     raise ValueError(f"Token '{token}' must be in the bag of words (BOW).")
 
         entries = self._embeddings.get(token)
         if not entries:
@@ -171,7 +137,9 @@ class Bert2VecModel:
         return results[:max_results] if max_results else results
 
     def get_entry_by_bow(self, token: str, bow: list[str]) -> TokenEntry:
-        return self.get_entries_by_bow_bm25(token=token, bow=bow, max_results=1)[0][0]
+        result = self.get_entries_by_bow_bm25(token=token, bow=bow, max_results=1)
+        return result[0][0] if result else None
+
 
     def get_entry_by_vec(self, token: str, vec: np.ndarray) -> tuple[TokenEntry | None, float]:
         entries = self._embeddings.get(token)

@@ -40,7 +40,7 @@ class TokenEntry(BaseModel):
         self.bow = dict(Counter(self.bow) + Counter(token.bow))
 
     def __repr__(self):
-        return f"{self.token!r},{self.vec!r},{self.BOW!r},{self.count!r}"
+        return f"{self.token!r},{self.vec!r},{self.bow!r},{self.count!r}"
 
 type TokenEntries = list[TokenEntry]
 

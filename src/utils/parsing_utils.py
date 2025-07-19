@@ -3,7 +3,7 @@ import numpy as np
 from src.config import config
 from src.bert_2_vec_model import Bert2VecModel
 from src.data_models import TokenEntry
-from src.utils.models_utils import get_bert_tokenizer
+from src.utils.models_utils import get_bert_tokenizer, get_bert_vec
 
 
 def tokenize_sentence(sentence: str) -> list[str]:
@@ -21,10 +21,9 @@ def get_bow(tokens: list, idx: int, size: int = 5):
 
 
 def unite_tokens(token_list: list[tuple[str, np.ndarray]]) -> tuple[str, np.ndarray]:
-    united_token = "".join(t[0].rstrip("##") for t in token_list)
+    united_token = "".join(t[0].removeprefix("##") for t in token_list)
     united_vec = np.sum([t[1] for t in token_list], axis=0)
     return united_token, united_vec
-
 
 
 def unite_sentence(sentence: str, bert2vec_model: Bert2VecModel) -> list[tuple[str, np.ndarray]]:
@@ -35,18 +34,17 @@ def unite_sentence(sentence: str, bert2vec_model: Bert2VecModel) -> list[tuple[s
     while idx > -1:
         token = tokens[idx]
         bow = get_bow(tokens=tokens, idx=idx)
-        vec = bert2vec_model.get_entry_by_bow(token=token, bow=bow).vec
+        entry = bert2vec_model.get_entry_by_bow(token=token, bow=bow)
+        vec = entry.vec if entry else get_bert_vec(token=token, sentence=sentence)
         buffer.append((token, vec))
-        if tokens[idx].startswith("##"):
-            continue
-
-        if len(buffer) > 1:
-            token, vec = unite_tokens(buffer)
-        final_tokens.append((token, vec))
-        buffer = []
+        if not tokens[idx].startswith("##"):
+            if len(buffer) > 1:
+                # We iterate the sentence from the end to start, so we need to reverse the buffer order.
+                token, vec = unite_tokens(buffer[::-1])
+            final_tokens.append((token, vec))
+            buffer = []
 
         idx -= 1
 
-    return final_tokens
-
-
+    # We iterate the sentence from the end to start, so we need to reverse the order of the final results.
+    return final_tokens[::-1]

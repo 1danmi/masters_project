@@ -37,7 +37,7 @@ def main():
     # example = book_corpus[7068]["text"]
     with Bert2VecModel(source_path=config().bert2vec_path, in_mem=False) as bert2vec_model:
         example = "This bank is unprofessional at all today."
-        print(t[0] for t in unite_sentence(sentence=example, bert2vec_model=bert2vec_model))
+        print([t[0] for t in unite_sentence(sentence=example, bert2vec_model=bert2vec_model)])
 
         # # 1. Tokenize the example sentence
         # tokens = tokenize_sentence(example)
