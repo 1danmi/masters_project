@@ -15,7 +15,7 @@ from src.utils.models_utils import get_bert_tokenizer, get_bert_model
 
 BERT_VECTOR_SIZE: Final[int] = 768
 BERT_PRETRAINED_NAME: Final[str] = "bert-base-uncased"
-ACCEPT_THRESHOLD: Final[float] = config().accecpt_threshold
+ACCEPT_THRESHOLD: Final[float] = config().accept_threshold
 RADIUS: Final[float] = config().radius
 
 

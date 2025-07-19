@@ -20,19 +20,33 @@ def get_bow(tokens: list, idx: int, size: int = 5):
     return tokens[idx - size if idx > size else 0 : idx] + tokens[idx + 1 : idx + size + 1]
 
 
-def unite_sentence(sentence: str, bert2vec_model: Bert2VecModel, new_model: Bert2VecModel) -> str:
+def unite_tokens(token_list: list[tuple[str, np.ndarray]]) -> tuple[str, np.ndarray]:
+    united_token = "".join(t[0].rstrip("##") for t in token_list)
+    united_vec = np.sum([t[1] for t in token_list], axis=0)
+    return united_token, united_vec
+
+
+
+def unite_sentence(sentence: str, bert2vec_model: Bert2VecModel) -> list[tuple[str, np.ndarray]]:
     tokens = tokenize_sentence(sentence)
     idx = len(tokens) - 1
-    buffer: list[tuple[str, TokenEntry]] = []
-    final_tokens = {}
+    buffer: list[tuple[str, np.ndarray]] = []
+    final_tokens: list[tuple[str, np.ndarray]] = []
     while idx > -1:
         token = tokens[idx]
         bow = get_bow(tokens=tokens, idx=idx)
-        entry = bert2vec_model.get_entry_by_bow(token=token, bow=bow)
-        buffer.append((token, entry))
+        vec = bert2vec_model.get_entry_by_bow(token=token, bow=bow).vec
+        buffer.append((token, vec))
         if tokens[idx].startswith("##"):
             continue
 
-        if len(buffer) == 1:
-            united_token, united_vector = unite_tokens(buffer, bert2vec_model)
+        if len(buffer) > 1:
+            token, vec = unite_tokens(buffer)
+        final_tokens.append((token, vec))
+        buffer = []
+
         idx -= 1
+
+    return final_tokens
+
+
