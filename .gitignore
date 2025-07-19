@@ -308,3 +308,4 @@ http-client.private.env.json
 ~*.docx
 
 shared_files
+data
