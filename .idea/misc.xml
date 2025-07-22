@@ -3,8 +3,8 @@
   <component name="Black">
     <option name="cmdArguments" value="--line-length 120" />
     <option name="enabledOnReformat" value="true" />
-    <option name="pathToExecutable" value="C:\Users\danie\AppData\Local\Programs\Python\Python313\Scripts\black.exe" />
-    <option name="sdkName" value="Python 3.12 (Final Project)" />
+    <option name="pathToExecutable" value="C:\Users\danielm\AppData\Local\Programs\Python\Python312\Scripts\black.exe" />
+    <option name="sdkName" value="Python 3.12 (masters_project)" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (Final Project)" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.12 (masters_project)" project-jdk-type="Python SDK" />
 </project>
