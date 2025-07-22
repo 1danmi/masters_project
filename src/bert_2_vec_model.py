@@ -1,3 +1,4 @@
+import logging
 import os
 import shelve
 from pathlib import Path
@@ -6,17 +7,18 @@ from typing import Self, Final
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-from data_models import Embeddings, TokenEntry
+from src.data_models import Embeddings, TokenEntry
 from src.config import config
 from src.data_models import TokenEntries
+from src.utils.parsing_utils import tokenize_sentence, get_bow
 from src.utils.tf_utils import get_bow_idf_dict
 from src.utils.models_utils import get_bert_tokenizer, get_bert_model, BERT_VECTOR_SIZE, get_bert_vec
 
 ACCEPT_THRESHOLD: Final[float] = config().accept_threshold
 RADIUS: Final[float] = config().radius
 
+logger = logging.getLogger(__name__)
 
-# ToDo: Rename
 class Bert2VecModel:
 
     def __init__(
@@ -24,14 +26,19 @@ class Bert2VecModel:
         source_path: Path | str,
         dest_path: Path | str | None = None,
         in_mem: bool = False,
+        new_model: bool = False
     ):
-        self._source_path = source_path
-        self._dest_path = dest_path or source_path
+        self._source_path = Path(source_path)
+        self._dest_path = Path(dest_path or source_path)
         self._embeddings: Embeddings | shelve.Shelf[TokenEntries] | None = None
+        if new_model:
+            for filename in os.listdir(self._dest_path.parent):
+                file_path = os.path.join(self._dest_path.parent, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
         self.load_data(in_mem=in_mem)
 
     def __enter__(self) -> Self:
-
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -46,17 +53,19 @@ class Bert2VecModel:
 
     def _verify_source_table_exist(self) -> str:
         path = self.get_shelve_path(self._source_path)
-        if not path.is_file():
-            raise FileNotFoundError(f"File '{self._source_path}' doesn't exist")
+        # if not path.is_file():
+        #     raise FileNotFoundError(f"File '{self._source_path}' doesn't exist")
         return str(self._source_path)
 
     def load_data(self, in_mem=False) -> None:
+        print("Loading model...")
         source_file_path = self._verify_source_table_exist()
         if not in_mem:
             self._embeddings = shelve.open(source_file_path)
         else:
             with shelve.open(source_file_path) as s:
                 self._embeddings = dict(s)  # read whole
+        print("Finished loading model")
 
     def save_data(self) -> None:
         if isinstance(self._embeddings, dict):
@@ -69,12 +78,13 @@ class Bert2VecModel:
             self._embeddings.sync()
 
     def close(self):
+        self.save_data()
         if isinstance(self._embeddings, shelve.Shelf):
             self._embeddings.close()
 
     def __getitem__(self, token: str):
         if isinstance(token, str):
-            if not self._embeddings:
+            if self._embeddings is None:
                 raise RuntimeError("Embeddings are not loaded. Please load the model first.")
             return self._embeddings.get(token)
         else:
@@ -136,13 +146,20 @@ class Bert2VecModel:
         results = sorted(bm25, key=lambda t: t[1], reverse=True)
         return results[:max_results] if max_results else results
 
+    def get_entry_by_sentence(self, token:  str, sentence: str):
+        tokens = tokenize_sentence(sentence)
+        token_idx = tokens.index(token)
+        bow = get_bow(tokens=tokens, idx=token_idx)
+        return self.get_entry_by_bow(token=token, bow=bow)
+
+
     def get_entry_by_bow(self, token: str, bow: list[str]) -> TokenEntry:
         result = self.get_entries_by_bow_bm25(token=token, bow=bow, max_results=1)
         return result[0][0] if result else None
 
 
     def get_entry_by_vec(self, token: str, vec: np.ndarray) -> tuple[TokenEntry | None, float]:
-        entries = self._embeddings.get(token)
+        entries = self._embeddings.get(token, [])
         closest_entry = None
         max_cos = -1
         for entry in entries:
@@ -152,13 +169,14 @@ class Bert2VecModel:
                 closest_entry = entry
         return closest_entry, max_cos
 
-    def add_token(self, token: str, vec: np.ndarray, bow: list[str]) -> None:
-        closest_entry, max_similarity = self.get_entry_by_vec(token=token, vec=vec)
+    def add_entry(self, entry: TokenEntry) -> None:
+        closest_entry, max_similarity = self.get_entry_by_vec(token=entry.token, vec=entry.vec)
         if closest_entry is not None:
             if max_similarity > ACCEPT_THRESHOLD:
-                closest_entry.update_vec_count(new_vec=vec)
-                closest_entry.update_bow(bow=bow)
-            elif max_similarity < RADIUS:
-                self._embeddings[token].append(TokenEntry(bow={t: 1 for t in bow}, token=token, vec=vec))
+                closest_entry.update_vec_count(new_vec=entry.vec)
+                closest_entry.update_bow(bow=entry.bow, bow_b2v=entry.bow_b2v)
+            # elif max_similarity < RADIUS:
+            else:
+                self._embeddings[entry.token].append(entry)
         else:
-            self._embeddings[token] = [TokenEntry(bow={t: 1 for t in bow}, token=token, vec=vec)]
+            self._embeddings[entry.token] = [entry]
