@@ -18,6 +18,7 @@ def get_bert_tokenizer(pretrained_model_name: str) -> BertTokenizer:
 def get_bert_model(pretrained_model_name: str) -> BertModel:
     return BertModel.from_pretrained(pretrained_model_name, output_hidden_states=True)
 
+
 def get_bert_vec(token: str, sentence: str) -> np.ndarray:
     # 1. Load the BERT tokenizer and model.
     tokenizer = get_bert_tokenizer(BERT_PRETRAINED_NAME)

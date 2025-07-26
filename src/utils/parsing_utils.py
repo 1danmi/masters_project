@@ -11,6 +11,7 @@ from src.utils.models_utils import get_bert_tokenizer, get_bert_vec
 # if TYPE_CHECKING:
 #     from src.bert_2_vec_model import Bert2VecModel
 
+
 def tokenize_sentence(sentence: str) -> list[str]:
     tokenizer = get_bert_tokenizer(config().bert_pretrained_name)
     return tokenizer.tokenize(sentence)
@@ -49,7 +50,7 @@ def unite_sentence_tokens(sentence: str, bert2vec_model, bow_size: int = 5) -> l
                 token, vec = unite_tokens(buffer[::-1])
 
             # The list of tokens after merging only the current tokens
-            merged_tokens = tokens[:idx] + [token] + tokens[idx + len(buffer):]
+            merged_tokens = tokens[:idx] + [token] + tokens[idx + len(buffer) :]
             bow_b2v = get_bow(tokens=merged_tokens, idx=idx, size=bow_size)
 
             entry = TokenEntry(bow_b2v=dict(Counter(bow_b2v)), token=token, vec=vec)

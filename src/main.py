@@ -11,6 +11,7 @@ from src.utils.parsing_utils import unite_sentence_tokens
 
 logging.basicConfig()
 
+
 def get_examples_with_word(
     word: str, book_corpus: Dataset, num_of_examples: int = 1, allow_less: bool = False
 ) -> dict[int, str]:
@@ -39,7 +40,6 @@ def main():
     dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
     print("Done loading dataset, starting building model...")
     create_entries_db(dataset=dataset)
-
 
 
 if __name__ == "__main__":
