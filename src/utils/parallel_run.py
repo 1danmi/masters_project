@@ -92,6 +92,7 @@ class ParallelRunner:
         print(f"Total inputs: {total_inputs:,}")
         print(f"Remaining: {remaining_inputs:,}")
 
+        print(f"Starting with {config().workers_count} workers")
         with ProcessPoolExecutor(max_workers=config().workers_count) as pool:
             futures = {}
             inserted_since_commit = 0
