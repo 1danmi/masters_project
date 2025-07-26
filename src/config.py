@@ -20,6 +20,7 @@ class ProjectConfig(BaseSettings):
     index_columns: str = "idx"
     input_column: str = "input"
     entries_column: str = "pickled_object"
+    device: str = "cpu"
 
 
 @lru_cache
