@@ -12,10 +12,14 @@ class ProjectConfig(BaseSettings):
     accept_threshold: float = 0.69
     radius: float = 0.62
     print_checkpoint_count: int = 1000
-    save_checkpoint_count: int = 10000
+    save_checkpoint_count: int = 10
     workers_count: int = os.cpu_count() - 1
     chunk_size: int = 1000
-    log_interval_seconds: int = 10
+    log_interval_seconds: float = 10
+    results_table: str = "results"
+    index_columns: str = "index"
+    input_column: str = "input"
+    entries_column: str = "pickled_object"
 
 
 @lru_cache

@@ -1,30 +1,30 @@
 from __future__ import annotations
 
-import itertools
-import os
 import pickle
 import signal
 import sqlite3
-import sys
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import timedelta
+import itertools
 from time import time
-from functools import partial
-from hashlib import blake2b
 from pathlib import Path
-from typing import Iterable, List, Tuple, Callable
+from datetime import timedelta
+from typing import Iterable, Callable
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+from datasets import Dataset
 
 from src.config import config
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS result (
-input           TEXT PRIMARY KEY,
-pickled_object  BLOB        NOT NULL
+
+SCHEMA_SQL = f"""
+CREATE TABLE IF NOT EXISTS {config().results_table} (
+{config().input_column}           TEXT PRIMARY KEY,
+{config().entries_column}  BLOB        NOT NULL
 );
 """
 
 
 def init_db(path: Path) -> tuple[sqlite3.Connection, sqlite3.Cursor]:
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA journal_mode=WAL;")  # Better concurrency / crash resiliency
     cur = conn.cursor()
@@ -34,7 +34,7 @@ def init_db(path: Path) -> tuple[sqlite3.Connection, sqlite3.Cursor]:
 
 
 def already_done(cur: sqlite3.Cursor) -> set[str]:
-    cur.execute("SELECT input FROM results")
+    cur.execute(f"SELECT {config().input_column} FROM {config().results_table}")
     return {row[0] for row in cur.fetchall()}
 
 
@@ -56,11 +56,11 @@ def format_td(seconds: float) -> str:
     return str(timedelta(seconds=seconds))
 
 
-def parallel_run(db_path: Path, corpus: list[str], func: Callable[[str], object]):
+def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object]):
     conn, cur = init_db(db_path)
     done = already_done(cur)
     total_done = len(done)
-    print(f"Resuming: {total_done:,}/{len(corpus):,} already processed")
+    print(f"Resuming: {total_done:,}/{len(dataset):,} already processed")
 
     # ── Graceful Ctrl‑C handling ───────────────────────────────────────────
     stop_submitting = False
@@ -74,7 +74,7 @@ def parallel_run(db_path: Path, corpus: list[str], func: Callable[[str], object]
 
     # ── Process pool setup ────────────────────────────────────────────────
 
-    total_inputs = len(corpus)
+    total_inputs = len(dataset)
     remaining_inputs = total_inputs - total_done
     if remaining_inputs <= 0:
         print("All inputs already processed.")
@@ -92,11 +92,12 @@ def parallel_run(db_path: Path, corpus: list[str], func: Callable[[str], object]
         last_log = start_time
         log_interval = config().log_interval_seconds
 
-        for chunk in chunked(corpus, config().chunk_size):
+        for chunk in chunked(dataset, config().chunk_size):
             if stop_submitting:
                 break
 
             for s in chunk:
+                s = s["text"]
                 futures[pool.submit(func, s)] = s
 
             for future in as_completed(list(futures)):
@@ -104,7 +105,7 @@ def parallel_run(db_path: Path, corpus: list[str], func: Callable[[str], object]
                 try:
                     result_obj = future.result()
                     pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
-                    cur.execute("INSERT OR IGNORE INTO result VALUES (?, ?)", (s, pickled))
+                    cur.execute(f"INSERT OR IGNORE INTO {config().results_table} VALUES (?, ?)", (s, pickled))
                     inserted_since_commit += 1
                     processed += 1
                 except Exception as e:
@@ -137,10 +138,7 @@ def parallel_run(db_path: Path, corpus: list[str], func: Callable[[str], object]
             try:
                 result_obj = future.result()
                 pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
-                cur.execute(
-                    "INSERT OR IGNORE INTO result VALUES (?, ?)",
-                    (s, pickled),
-                )
+                cur.execute(f"INSERT OR IGNORE INTO {config().results_table} VALUES (?, ?)", (s, pickled))
                 processed += 1
             except Exception as e:
                 print(f"Error processing {s!r}: {e!r}")
