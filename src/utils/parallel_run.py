@@ -17,8 +17,9 @@ from src.config import config
 
 SCHEMA_SQL = f"""
 CREATE TABLE IF NOT EXISTS {config().results_table} (
-{config().input_column}           TEXT PRIMARY KEY,
-{config().entries_column}  BLOB        NOT NULL
+    {config().index_columns} INTEGER PRIMARY KEY,
+    {config().input_column}  TEXT UNIQUE,
+    {config().entries_column} BLOB NOT NULL
 );
 """
 
@@ -105,7 +106,10 @@ def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object])
                 try:
                     result_obj = future.result()
                     pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
-                    cur.execute(f"INSERT OR IGNORE INTO {config().results_table} VALUES (?, ?)", (s, pickled))
+                    cur.execute(
+                        f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
+                        (s, pickled),
+                    )
                     inserted_since_commit += 1
                     processed += 1
                 except Exception as e:
@@ -138,7 +142,10 @@ def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object])
             try:
                 result_obj = future.result()
                 pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
-                cur.execute(f"INSERT OR IGNORE INTO {config().results_table} VALUES (?, ?)", (s, pickled))
+                cur.execute(
+                    f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
+                    (s, pickled),
+                )
                 processed += 1
             except Exception as e:
                 print(f"Error processing {s!r}: {e!r}")
