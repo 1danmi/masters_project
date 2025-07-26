@@ -20,11 +20,13 @@ TABLE_DIR = "shelve"
 TABLE = "table.slv"
 
 
-stop_words = set(stopwords.words('english'))
+stop_words = set(stopwords.words("english"))
+
 
 # get bag of words of the ith word in the list
 def getBagOfWords(text: list, i):
-    return text[i - 5 if i > 5 else 0:i] + text[i + 1:i + 6]
+    return text[i - 5 if i > 5 else 0 : i] + text[i + 1 : i + 6]
+
 
 class Model:
     def __init__(self, path=f"{PATH}\\{TABLE_DIR}\\{TABLE}"):
@@ -87,14 +89,19 @@ class Model:
         # create a tuple of (Row, BM25_rank)
         lst = []
         for r in rows:
-            lst += [(r, sum(
-                BOW_IDF_dict.get(w) *  # IDF
-                # (
-                r.BOW.get(w, 0)
-                # / r.count )
-                / sum(r.BOW.values())  # TF
-                for w in BOW
-            ))]
+            lst += [
+                (
+                    r,
+                    sum(
+                        BOW_IDF_dict.get(w) *  # IDF
+                        # (
+                        r.BOW.get(w, 0)
+                        # / r.count )
+                        / sum(r.BOW.values())  # TF
+                        for w in BOW
+                    ),
+                )
+            ]
         return sorted(lst, key=lambda t: t[1], reverse=True)
 
         # recevies a word, returns a list of most appropriate rows according to BM25 formula
@@ -127,7 +134,8 @@ class Model:
     # Bag of Words is also sorted descending
     # the returned result is list of (origEntry, Row)
     def getRowsByCount(self, word, n=5):
-        if not word in self.rows: return []
+        if not word in self.rows:
+            return []
         rows = copy.deepcopy(self.rows[word])
         ret = []
         for i in range(len(rows)):
@@ -192,17 +200,26 @@ class Model:
     def search_str(self, s: str):
         return self.rows.get(s)
 
-    def find_close_n_similar_count(self,s, n:int, include_partial_words=True, include_self=False,
-                             include_add_sub=False,include_duplicates = True, add_words=[], sub_words=[]):
-        maxes = [(None, float('-inf'))] * n
-        row = max(self.rows.get(s),key = lambda row: row.count)
+    def find_close_n_similar_count(
+        self,
+        s,
+        n: int,
+        include_partial_words=True,
+        include_self=False,
+        include_add_sub=False,
+        include_duplicates=True,
+        add_words=[],
+        sub_words=[],
+    ):
+        maxes = [(None, float("-inf"))] * n
+        row = max(self.rows.get(s), key=lambda row: row.count)
         for w in add_words:
             row.vec = np.add(row.vec, max(self.rows.get(w), key=lambda row: row.count).vec)
         for w in sub_words:
             row.vec = np.subtract(row.vec, max(self.rows.get(w), key=lambda row: row.count).vec)
         for word in self.rows.values():
             for r in word:
-                if include_partial_words is False and r.s.startswith('##'):
+                if include_partial_words is False and r.s.startswith("##"):
                     continue
                 if r.s == row.s:
                     if not include_self:
@@ -218,9 +235,18 @@ class Model:
                     maxes[i] = (r, cos)
         return sorted(maxes, key=lambda k: k[1], reverse=True)
 
-    def find_close_n_similar(self, row: Row, n: int, include_partial_words=True, include_self=False,
-                             include_add_sub=False,include_duplicates = True, add_words=[], sub_words=[]):
-        maxes = [(None, float('-inf'))] * n
+    def find_close_n_similar(
+        self,
+        row: Row,
+        n: int,
+        include_partial_words=True,
+        include_self=False,
+        include_add_sub=False,
+        include_duplicates=True,
+        add_words=[],
+        sub_words=[],
+    ):
+        maxes = [(None, float("-inf"))] * n
         # from copy import deepcopy
         # row = deepcopy(row)
         for w in add_words:
@@ -230,7 +256,7 @@ class Model:
 
         for word in self.rows.values():
             for r in word:
-                if include_partial_words is False and r.s.startswith('##'):
+                if include_partial_words is False and r.s.startswith("##"):
                     continue
                 if r.s == row.s:
                     if not include_self:

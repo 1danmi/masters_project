@@ -1,5 +1,5 @@
-import logging
 import os
+import logging
 import shelve
 from pathlib import Path
 from typing import Self, Final
@@ -7,17 +7,17 @@ from typing import Self, Final
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
-from src.data_models import Embeddings, TokenEntry
 from src.config import config
-from src.data_models import TokenEntries
-from src.utils.parsing_utils import tokenize_sentence, get_bow
+from src.data_models import Embeddings, TokenEntry, TokenEntries
 from src.utils.tf_utils import get_bow_idf_dict
-from src.utils.models_utils import get_bert_tokenizer, get_bert_model, BERT_VECTOR_SIZE, get_bert_vec
+from src.utils.parsing_utils import tokenize_sentence, get_bow
+from src.utils.models_utils import BERT_VECTOR_SIZE, get_bert_vec
 
 ACCEPT_THRESHOLD: Final[float] = config().accept_threshold
 RADIUS: Final[float] = config().radius
 
 logger = logging.getLogger(__name__)
+
 
 class Bert2VecModel:
 
@@ -26,7 +26,7 @@ class Bert2VecModel:
         source_path: Path | str,
         dest_path: Path | str | None = None,
         in_mem: bool = False,
-        new_model: bool = False
+        new_model: bool = False,
     ):
         self._source_path = Path(source_path)
         self._dest_path = Path(dest_path or source_path)
@@ -146,17 +146,15 @@ class Bert2VecModel:
         results = sorted(bm25, key=lambda t: t[1], reverse=True)
         return results[:max_results] if max_results else results
 
-    def get_entry_by_sentence(self, token:  str, sentence: str):
+    def get_entry_by_sentence(self, token: str, sentence: str):
         tokens = tokenize_sentence(sentence)
         token_idx = tokens.index(token)
         bow = get_bow(tokens=tokens, idx=token_idx)
         return self.get_entry_by_bow(token=token, bow=bow)
 
-
     def get_entry_by_bow(self, token: str, bow: list[str]) -> TokenEntry:
         result = self.get_entries_by_bow_bm25(token=token, bow=bow, max_results=1)
         return result[0][0] if result else None
-
 
     def get_entry_by_vec(self, token: str, vec: np.ndarray) -> tuple[TokenEntry | None, float]:
         entries = self._embeddings.get(token, [])
