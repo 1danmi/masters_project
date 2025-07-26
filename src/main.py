@@ -16,7 +16,7 @@ from bert2vec.model.Row import Row
 from src.bert_2_vec_model import Bert2VecModel
 from src.config import config
 from src.data_models import TokenEntry
-from src.utils.parallel_run import parallel_run, init_db, INPUT_COLUMN, ENTRIES_COLUMN
+from src.utils.parallel_run import parallel_run
 from src.utils.parsing_utils import tokenize_sentence, unite_sentence_tokens
 from src.utils.misc_utils import convert_rows_to_entries, convert_to_pydantic
 
@@ -42,28 +42,28 @@ def get_examples_with_word(
 
 def create_entries_db(dataset: Dataset):
     # sentence_count = len(corpus)
+    db_path = Path("data/temp/data.db")
     with Bert2VecModel(source_path=config().bert2vec_path, in_mem=False) as bert2vec_model:
         func = partial(unite_sentence_tokens, bert2vec_model=bert2vec_model)
-        db_path = Path("data/temp/data.db")
         parallel_run(db_path=db_path, dataset=dataset, func=func)
-        conn, cur = init_db(db_path)
-        with Bert2VecModel(source_path=config().dest_path, in_mem=False, new_model=True) as dest_model:
-            offset = 0
-            while True:
-                cur.execute(
-                    f"""
-                               SELECT {INPUT_COLUMN}, {ENTRIES_COLUMN} FROM my_table
-                               LIMIT ? OFFSET ?
-                               """,
-                    (config().chunk_size, offset),
-                )
-                rows = cur.fetchall()
-                if not rows:
-                    break
-
-                for input_text, pickled_blob in rows:
-                    obj = pickle.loads(pickled_blob)
-                    yield input_text, obj
+        # conn, cur = init_db(db_path)
+        # with Bert2VecModel(source_path=config().dest_path, in_mem=False, new_model=True) as dest_model:
+        #     offset = 0
+        #     while True:
+        #         cur.execute(
+        #             f"""
+        #                        SELECT {config().input_column}, {config().entries_column} FROM my_table
+        #                        LIMIT ? OFFSET ?
+        #                        """,
+        #             (config().chunk_size, offset),
+        #         )
+        #         rows = cur.fetchall()
+        #         if not rows:
+        #             break
+        #
+        #         for input_text, pickled_blob in rows:
+        #             obj = pickle.loads(pickled_blob)
+        #             yield input_text, obj
 
         # print(f"Starting...")
         start_time = epoch_time = time()

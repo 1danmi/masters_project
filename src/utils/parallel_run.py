@@ -24,29 +24,6 @@ CREATE TABLE IF NOT EXISTS {config().results_table} (
 """
 
 
-def init_db(path: Path) -> tuple[sqlite3.Connection, sqlite3.Cursor]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
-    conn.execute("PRAGMA journal_mode=WAL;")  # Better concurrency / crash resiliency
-    cur = conn.cursor()
-    cur.execute(SCHEMA_SQL)
-    conn.commit()
-    return conn, cur
-
-
-def already_done(cur: sqlite3.Cursor) -> set[str]:
-    cur.execute(f"SELECT {config().input_column} FROM {config().results_table}")
-    return {row[0] for row in cur.fetchall()}
-
-
-def stream_inputs(file_path: Path, skip: set[str]) -> Iterable[str]:
-    with file_path.open("r", encoding="utf-8") as f:
-        for line in f:
-            s = line.rstrip("\n")
-            if s and s not in skip:
-                yield s
-
-
 def chunked(it: Iterable[str], size: int) -> Iterable[list[str]]:
     iterator = iter(it)
     while chunk := list(itertools.islice(iterator, size)):
@@ -57,101 +34,137 @@ def format_td(seconds: float) -> str:
     return str(timedelta(seconds=seconds))
 
 
-def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object]):
-    conn, cur = init_db(db_path)
-    done = already_done(cur)
-    total_done = len(done)
-    print(f"Resuming: {total_done:,}/{len(dataset):,} already processed")
+class ParallelRunner:
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = db_path
+        self.conn: sqlite3.Connection | None = None
+        self.cur: sqlite3.Cursor | None = None
 
-    # ── Graceful Ctrl‑C handling ───────────────────────────────────────────
-    stop_submitting = False
+    # -- Context Manager -------------------------------------------------
+    def __enter__(self) -> "ParallelRunner":
+        self._open_db()
+        return self
 
-    def sigint_handler(signum, frame):
-        nonlocal stop_submitting
-        stop_submitting = True
-        print("\nReceived Ctrl+C -> will finish in flight tasks and exit...")
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if self.conn:
+            self.conn.commit()
+            self.conn.close()
 
-    signal.signal(signal.SIGINT, sigint_handler)
+    # -- Private helpers -------------------------------------------------
+    def _open_db(self) -> None:
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.conn = sqlite3.connect(self.db_path)
+        self.conn.execute("PRAGMA journal_mode=WAL;")
+        self.cur = self.conn.cursor()
+        self.cur.execute(SCHEMA_SQL)
+        self.conn.commit()
 
-    # ── Process pool setup ────────────────────────────────────────────────
+    def _already_done(self) -> set[str]:
+        assert self.cur is not None
+        self.cur.execute(f"SELECT {config().input_column} FROM {config().results_table}")
+        return {row[0] for row in self.cur.fetchall()}
 
-    total_inputs = len(dataset)
-    remaining_inputs = total_inputs - total_done
-    if remaining_inputs <= 0:
-        print("All inputs already processed.")
-        return
+    # -- Public API ------------------------------------------------------
+    def parallel_run(self, dataset: Dataset, func: Callable[[str], object]) -> None:
+        assert self.cur is not None and self.conn is not None
+        done = self._already_done()
+        total_done = len(done)
+        print(f"Resuming: {total_done:,}/{len(dataset):,} already processed")
 
-    print(f"Total inputs: {total_inputs:,}")
-    print(f"Remaining: {remaining_inputs:,}")
+        # ── Graceful Ctrl‑C handling ───────────────────────────────────────────
+        stop_submitting = False
 
-    with ProcessPoolExecutor(max_workers=config().workers_count) as pool:
-        futures = {}
-        inserted_since_commit = 0
-        processed = 0
+        def sigint_handler(signum, frame):
+            nonlocal stop_submitting
+            stop_submitting = True
+            print("\nReceived Ctrl+C -> will finish in flight tasks and exit...")
 
-        start_time = time()
-        last_log = start_time
-        log_interval = config().log_interval_seconds
+        signal.signal(signal.SIGINT, sigint_handler)
 
-        for chunk in chunked(dataset, config().chunk_size):
-            if stop_submitting:
-                break
+        # ── Process pool setup ────────────────────────────────────────────────
 
-            for s in chunk:
-                s = s["text"]
-                futures[pool.submit(func, s)] = s
+        total_inputs = len(dataset)
+        remaining_inputs = total_inputs - total_done
+        if remaining_inputs <= 0:
+            print("All inputs already processed.")
+            return
 
+        print(f"Total inputs: {total_inputs:,}")
+        print(f"Remaining: {remaining_inputs:,}")
+
+        with ProcessPoolExecutor(max_workers=config().workers_count) as pool:
+            futures = {}
+            inserted_since_commit = 0
+            processed = 0
+
+            start_time = time()
+            last_log = start_time
+            log_interval = config().log_interval_seconds
+
+            for chunk in chunked(dataset, config().chunk_size):
+                if stop_submitting:
+                    break
+
+                for s in chunk:
+                    s = s["text"]
+                    futures[pool.submit(func, s)] = s
+
+                for future in as_completed(list(futures)):
+                    s = futures.pop(future)
+                    try:
+                        result_obj = future.result()
+                        pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
+                        self.cur.execute(
+                            f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
+                            (s, pickled),
+                        )
+                        inserted_since_commit += 1
+                        processed += 1
+                    except Exception as e:
+                        print(f"Error processing {s!r}: {e!r}")
+
+                    if inserted_since_commit >= config().save_checkpoint_count:
+                        self.conn.commit()
+                        inserted_since_commit = 0
+
+                    if stop_submitting:
+                        break
+
+                    now = time()
+                    if now - last_log >= log_interval:
+                        elapsed = now - start_time
+                        rate = processed / elapsed if elapsed else 0
+                        est_total = remaining_inputs / rate if rate else 0
+                        remaining = est_total - elapsed
+                        print(
+                            f"Progress: {processed:,}/{remaining_inputs:,} "
+                            f"({100 * processed / remaining_inputs:.1f}%) – "
+                            f"Elapsed: {format_td(elapsed)}, "
+                            f"ETA: {format_td(remaining)}"
+                        )
+                        last_log = now
+
+            # In case Ctrl+C was hit
             for future in as_completed(list(futures)):
                 s = futures.pop(future)
                 try:
                     result_obj = future.result()
                     pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
-                    cur.execute(
+                    self.cur.execute(
                         f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
                         (s, pickled),
                     )
-                    inserted_since_commit += 1
                     processed += 1
                 except Exception as e:
                     print(f"Error processing {s!r}: {e!r}")
 
-                if inserted_since_commit >= config().save_checkpoint_count:
-                    conn.commit()
-                    inserted_since_commit = 0
+            self.conn.commit()
+            total_time = time() - start_time
 
-                if stop_submitting:
-                    break
+            print(f"All done. Processed {processed:,} strings in {format_td(total_time)}")
 
-                now = time()
-                if now - last_log >= log_interval:
-                    elapsed = now - start_time
-                    rate = processed / elapsed if elapsed else 0
-                    est_total = remaining_inputs / rate if rate else 0
-                    remaining = est_total - elapsed
-                    print(
-                        f"Progress: {processed:,}/{remaining_inputs:,} "
-                        f"({100 * processed / remaining_inputs:.1f}%) – "
-                        f"Elapsed: {format_td(elapsed)}, "
-                        f"ETA: {format_td(remaining)}"
-                    )
-                    last_log = now
 
-        # In case Ctrl+C was hit
-        for future in as_completed(list(futures)):
-            s = futures.pop(future)
-            try:
-                result_obj = future.result()
-                pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
-                cur.execute(
-                    f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
-                    (s, pickled),
-                )
-                processed += 1
-            except Exception as e:
-                print(f"Error processing {s!r}: {e!r}")
-
-        conn.commit()
-        conn.close()
-        total_time = time() - start_time
-
-    print(f"All done. Processed {processed:,} strings in {format_td(total_time)}")
+def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object]):
+    """Convenience wrapper to maintain backwards compatibility."""
+    with ParallelRunner(db_path) as runner:
+        runner.parallel_run(dataset=dataset, func=func)
