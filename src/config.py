@@ -17,7 +17,7 @@ class ProjectConfig(BaseSettings):
     chunk_size: int = 1000
     log_interval_seconds: float = 10
     results_table: str = "results"
-    index_columns: str = "index"
+    index_columns: str = "idx"
     input_column: str = "input"
     entries_column: str = "pickled_object"
 
