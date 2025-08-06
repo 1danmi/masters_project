@@ -8,6 +8,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from src.config import config
+
 
 class SQLitePickleStreamer[T]:
     """
@@ -42,7 +44,7 @@ class SQLitePickleStreamer[T]:
         pk_col: str,
         blob_col: str,
         *,
-        chunk_size: int = 100,
+        chunk_size: int = 1000,
         state_path: str | Path = "progress_state.json",
         stop_flag_path: str | Path = "STOP",
         log_every_sec: float = 5.0,
@@ -140,6 +142,7 @@ class SQLitePickleStreamer[T]:
         self._total_rows = self._count_total_rows()
 
         last_pk = self._state["last_pk"]
+        starting_pk = last_pk
         processed = self._state["processed"]
 
         print(
@@ -177,15 +180,19 @@ class SQLitePickleStreamer[T]:
                     now = time.perf_counter()
                     if now - last_log >= self.log_every_sec:
                         self._checkpoint(last_pk, processed)
-                        eta = self._eta(start_time, processed, self._total_rows)
+                        eta = self._eta(start_time, processed - starting_pk, self._total_rows)
                         print(
-                            f"Processed {processed}/{self._total_rows} ({processed * 100 / self._total_rows:.2f}%). ETA {self._fmt_seconds(eta) if eta is not None else '?'}",
+                            f"Processed {processed-starting_pk}/{self._total_rows} ({(processed-starting_pk) * 100 / self._total_rows:.2f}%). ETA {self._fmt_seconds(eta) if eta is not None else '?'}",
                         )
                         last_log = now
 
                 # --- post-chunk cleanup ---
                 if _to_delete:
                     self._delete_rows(_to_delete)
+
+                if (processed - starting_pk) % config().save_checkpoint_count == 0:
+                    print("Vacuuming...")
+                    self._conn.execute("VACUUM;")
 
                 self._checkpoint(last_pk, processed)
 

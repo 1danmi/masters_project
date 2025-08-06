@@ -62,10 +62,12 @@ class Bert2VecModel:
         source_file_path = self._verify_source_table_exist()
         if not in_mem:
             self._embeddings = shelve.open(source_file_path)
+            print("Finished loading model...")
         else:
             with shelve.open(source_file_path) as s:
                 self._embeddings = dict(s)  # read whole
-        print("Finished loading model")
+            print(f"Finished loading model with {len(self._embeddings)}...")
+
 
     def save_data(self) -> None:
         if isinstance(self._embeddings, dict):
@@ -179,5 +181,5 @@ class Bert2VecModel:
         else:
             lst = self._embeddings.get(entry.token, [])
             lst.append(entry)
-            if isinstance(self._embeddings, shelve.Shelf):
+            if isinstance(self._embeddings, shelve.Shelf) or len(lst) == 1:
                 self._embeddings[entry.token] = lst  # <- key step

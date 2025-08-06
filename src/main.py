@@ -41,15 +41,15 @@ counter = 0
 
 def update_model():
     db_path = Path("data/temp/data.db")
-    with Bert2VecModel(source_path=config().dest_path, in_mem=True) as dest_model:
+    with Bert2VecModel(source_path=config().dest_path, in_mem=True, new_model=True) as dest_model:
         def my_cb(entries: list[TokenEntry], pk: int, extras: dict[str, Any]) -> None:
             global counter
             counter += 1
             for entry in entries:
                 dest_model.add_entry(entry)
             if counter % config().save_checkpoint_count == 0:
-                print(f"Saving model...")
                 dest_model.save_data()
+                print(f"Saving model, currently holding {len(dest_model._embeddings)}...")
 
 
         streamer = SQLitePickleStreamer[list[TokenEntry]](
