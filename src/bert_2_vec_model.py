@@ -4,6 +4,8 @@ import shelve
 from pathlib import Path
 from typing import Self, Final
 
+from src.utils.write_behind_shelve import WriteBehindShelf
+
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -27,10 +29,14 @@ class Bert2VecModel:
         dest_path: Path | str | None = None,
         in_mem: bool = False,
         new_model: bool = False,
+        cache_size: int | None = None,
+        flush_interval_seconds: float | None = None,
     ):
         self._source_path = Path(source_path)
         self._dest_path = Path(dest_path or source_path)
-        self._embeddings: Embeddings | shelve.Shelf[TokenEntries] | None = None
+        self._embeddings: Embeddings | shelve.Shelf[TokenEntries] | WriteBehindShelf | None = None
+        self._cache_size = cache_size or config().write_cache_max_size
+        self._flush_interval_seconds = flush_interval_seconds or config().write_cache_flush_seconds
         if new_model:
             for filename in os.listdir(self._dest_path.parent):
                 file_path = os.path.join(self._dest_path.parent, filename)
@@ -61,13 +67,16 @@ class Bert2VecModel:
         print("Loading model...")
         source_file_path = self._verify_source_table_exist()
         if not in_mem:
-            self._embeddings = shelve.open(source_file_path)
+            self._embeddings = WriteBehindShelf(
+                source_file_path,
+                max_cache_size=self._cache_size,
+                flush_interval=self._flush_interval_seconds,
+            )
             print("Finished loading model...")
         else:
             with shelve.open(source_file_path) as s:
                 self._embeddings = dict(s)  # read whole
             print(f"Finished loading model with {len(self._embeddings)}...")
-
 
     def save_data(self) -> None:
         if isinstance(self._embeddings, dict):
@@ -76,12 +85,12 @@ class Bert2VecModel:
             with shelve.open(self._source_path) as s:
                 s.update(self._embeddings)
                 s.sync()
-        elif isinstance(self._embeddings, shelve.Shelf):
+        else:
             self._embeddings.sync()
 
     def close(self):
         self.save_data()
-        if isinstance(self._embeddings, shelve.Shelf):
+        if hasattr(self._embeddings, "close"):
             self._embeddings.close()
 
     def __getitem__(self, token: str):
@@ -172,14 +181,10 @@ class Bert2VecModel:
     def add_entry(self, entry: TokenEntry) -> None:
         closest_entry, max_similarity = self.get_entry_by_vec(token=entry.token, vec=entry.vec)
 
+        entries = self._embeddings.get(entry.token, [])
         if closest_entry is not None and max_similarity > ACCEPT_THRESHOLD:
             closest_entry.update_vec_count(new_vec=entry.vec)
             closest_entry.update_bow(bow=entry.bow, bow_b2v=entry.bow_b2v)
-            if isinstance(self._embeddings, shelve.Shelf):
-                # ensure persistence
-                self._embeddings[entry.token] = [closest_entry]
         else:
-            lst = self._embeddings.get(entry.token, [])
-            lst.append(entry)
-            if isinstance(self._embeddings, shelve.Shelf) or len(lst) == 1:
-                self._embeddings[entry.token] = lst  # <- key step
+            entries.append(entry)
+        self._embeddings[entry.token] = entries  # ensure persistence
