@@ -148,19 +148,19 @@ class Model:
 
         return ret[:n]
 
-    # # s - word, vec - the Bert vector, Bow - the environment of the word
-    # # adds this entry to our vocab
-    # def add_word(self, s: str, vec, BOW):
-    #     rows_list, row, dist = self.if_word_exists(s, vec)
-    #     if rows_list is not None:  # if word exists in our vocab
-    #         if dist > ACCEPT_AT:  # if the distance is above acceptance
-    #             row.update_vec_count(vec)
-    #             row.update_BOW(BOW)
-    #         elif dist < RADIUS:  # if distance is below rejection - new entry
-    #             rows_list.append(Row({x: 1 for x in BOW}, s, vec))
-    #     else:
-    #         self.rows[s] = [Row({x: 1 for x in BOW}, s, vec)]
-    #
+    # s - word, vec - the Bert vector, Bow - the environment of the word
+    # adds this entry to our vocab
+    def add_word(self, s: str, vec, BOW):
+        rows_list, row, dist = self.if_word_exists(s, vec)
+        if rows_list is not None:  # if word exists in our vocab
+            if dist > ACCEPT_AT:  # if the distance is above acceptance
+                row.update_vec_count(vec)
+                row.update_BOW(BOW)
+            elif dist < RADIUS:  # if distance is below rejection - new entry
+                rows_list.append(Row({x: 1 for x in BOW}, s, vec))
+        else:
+            self.rows[s] = [Row({x: 1 for x in BOW}, s, vec)]
+
     # # receives a word, returns a tuple [isExists, row, dist]
     # # isExists - whether the word exists in the dict
     # # row - the row with maximum ???

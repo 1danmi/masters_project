@@ -169,12 +169,15 @@ class Bert2VecModel:
 
     def add_entry(self, entry: TokenEntry) -> None:
         closest_entry, max_similarity = self.get_entry_by_vec(token=entry.token, vec=entry.vec)
-        if closest_entry is not None:
-            if max_similarity > ACCEPT_THRESHOLD:
-                closest_entry.update_vec_count(new_vec=entry.vec)
-                closest_entry.update_bow(bow=entry.bow, bow_b2v=entry.bow_b2v)
-            # elif max_similarity < RADIUS:
-            else:
-                self._embeddings[entry.token].append(entry)
+
+        if closest_entry is not None and max_similarity > ACCEPT_THRESHOLD:
+            closest_entry.update_vec_count(new_vec=entry.vec)
+            closest_entry.update_bow(bow=entry.bow, bow_b2v=entry.bow_b2v)
+            if isinstance(self._embeddings, shelve.Shelf):
+                # ensure persistence
+                self._embeddings[entry.token] = [closest_entry]
         else:
-            self._embeddings[entry.token] = [entry]
+            lst = self._embeddings.get(entry.token, [])
+            lst.append(entry)
+            if isinstance(self._embeddings, shelve.Shelf):
+                self._embeddings[entry.token] = lst  # <- key step

@@ -11,7 +11,7 @@ class ProjectConfig(BaseSettings):
     accept_threshold: float = 0.69
     radius: float = 0.62
     print_checkpoint_count: int = 1000
-    save_checkpoint_count: int = 10000
+    save_checkpoint_count: int = 100000
     workers_count: int = os.cpu_count() - 1
     chunk_size: int = 10000
     log_interval_seconds: float = 10
