@@ -70,6 +70,7 @@ class WriteBehindShelf(MutableMapping):
     # Public API --------------------------------------------------------------
     def flush(self) -> None:
         """Flush cached values to disk immediately."""
+        print(f"Flushing...")
         with self._lock:
             if self._cache:
                 self._shelf.update(self._cache)

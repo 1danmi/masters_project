@@ -33,7 +33,7 @@ class SQLitePickleStreamer[T]:
         "delete_processed",
         "_state",
         "_conn",
-        "_total_rows",
+        "_rows_to_process",
     )
 
     # ---------- constructor ----------
@@ -70,7 +70,7 @@ class SQLitePickleStreamer[T]:
         # internal state
         self._state: dict[str, int] = {"last_pk": 0, "processed": 0}
         self._conn: sqlite3.Connection | None = None
-        self._total_rows: int | None = None
+        self._rows_to_process: int | None = None
 
     def _open(self) -> None:
         if self._conn is None:
@@ -115,7 +115,13 @@ class SQLitePickleStreamer[T]:
         self._state.update(last_pk=last_pk, processed=processed)
         tmp = self.state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(self._state), encoding="utf-8")
-        tmp.replace(self.state_path)
+        try:
+            tmp.replace(self.state_path)
+        except Exception:
+            time.sleep(1)
+            tmp.replace(self.state_path)
+
+
 
     @staticmethod
     def _eta(start_time: float, processed: int, total: int) -> float | None:
@@ -139,14 +145,16 @@ class SQLitePickleStreamer[T]:
         """
         self._load_state()
         self._open()
-        self._total_rows = self._count_total_rows()
 
         last_pk = self._state["last_pk"]
         starting_pk = last_pk
         processed = self._state["processed"]
 
+        total_rows = self._count_total_rows()
+        self._rows_to_process = total_rows if self.delete_processed else total_rows - processed
+
         print(
-            f"Starting from {self.pk_col} > {last_pk} (processed {processed} / {self._total_rows}).  delete_processed={self.delete_processed}",
+            f"Starting from {self.pk_col} > {last_pk} (processed {processed} / {total_rows}).  delete_processed={self.delete_processed}",
         )
 
         start_time = time.perf_counter()
@@ -160,7 +168,7 @@ class SQLitePickleStreamer[T]:
 
                 rows = self._fetch_chunk(last_pk)
                 if not rows:
-                    print(f"Done. Processed {processed} / {self._total_rows} rows.", processed, self._total_rows)
+                    print(f"Done. Processed {processed} / {self._rows_to_process} rows.", processed, self._rows_to_process)
                     break
 
                 _to_delete: list[int] = []  # PKs to remove after chunk
@@ -180,9 +188,9 @@ class SQLitePickleStreamer[T]:
                     now = time.perf_counter()
                     if now - last_log >= self.log_every_sec:
                         self._checkpoint(last_pk, processed)
-                        eta = self._eta(start_time, processed - starting_pk, self._total_rows)
+                        eta = self._eta(start_time, processed - starting_pk, self._rows_to_process)
                         print(
-                            f"Processed {processed-starting_pk}/{self._total_rows} ({(processed-starting_pk) * 100 / self._total_rows:.2f}%). ETA {self._fmt_seconds(eta) if eta is not None else '?'}",
+                            f"Processed {processed-starting_pk}/{self._rows_to_process} ({(processed - starting_pk) * 100 / self._rows_to_process:.2f}%). ETA {self._fmt_seconds(eta) if eta is not None else '?'}",
                         )
                         last_log = now
 
@@ -190,9 +198,9 @@ class SQLitePickleStreamer[T]:
                 if _to_delete:
                     self._delete_rows(_to_delete)
 
-                if (processed - starting_pk) % config().save_checkpoint_count == 0:
-                    print("Vacuuming...")
-                    self._conn.execute("VACUUM;")
+                # if (processed - starting_pk) % config().save_checkpoint_count == 0:
+                #     print("Vacuuming...")
+                #     self._conn.execute("VACUUM;")
 
                 self._checkpoint(last_pk, processed)
 

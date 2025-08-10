@@ -1,9 +1,11 @@
 import logging
 from pathlib import Path
 from functools import partial
+from pickle import UnpicklingError
 from typing import Any
 
 from datasets import load_dataset, Dataset
+from pandas.compat.pickle_compat import Unpickler
 
 from src.config import config
 from src.bert_2_vec_model import Bert2VecModel
@@ -37,16 +39,16 @@ def create_entries_db(dataset: Dataset):
         func = partial(unite_sentence_tokens, bert2vec_model=bert2vec_model)
         parallel_run(db_path=db_path, dataset=dataset, func=func)
 
-counter = 0
+counter = 1
 
 def update_model():
     db_path = Path("data/temp/data.db")
-    with Bert2VecModel(source_path=config().dest_path, in_mem=True, new_model=True) as dest_model:
+    with Bert2VecModel(source_path=config().dest_path, in_mem=False) as dest_model:
         def my_cb(entries: list[TokenEntry], pk: int, extras: dict[str, Any]) -> None:
             global counter
-            counter += 1
             for entry in entries:
                 dest_model.add_entry(entry)
+                counter+=1
             if counter % config().save_checkpoint_count == 0:
                 dest_model.save_data()
                 print(f"Saving model, currently holding {len(dest_model._embeddings)}...")
@@ -57,7 +59,7 @@ def update_model():
             table=config().results_table,
             pk_col=config().index_columns,
             blob_col=config().entries_column,
-            delete_processed=True,
+            delete_processed=False,
             extra_cols=[config().input_column],
         )
 
