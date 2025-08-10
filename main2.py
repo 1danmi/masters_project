@@ -31,17 +31,20 @@ def get_examples_with_word(
     raise ValueError(f"Word '{word}' not found enough times in the book corpus.")
 
 
-def create_entries_db(dataset: Dataset):
+def create_entries_db(dataset: Dataset, start_index: int = 0):
     db_path = Path("data/temp/data.db")
     with Bert2VecModel(source_path=config().bert2vec_path, in_mem=False) as bert2vec_model:
         func = partial(unite_sentence_tokens, bert2vec_model=bert2vec_model)
-        parallel_run(db_path=db_path, dataset=dataset, func=func)
+        parallel_run(db_path=db_path, dataset=dataset, func=func, start_index=start_index)
+
 
 counter = 0
+
 
 def update_model():
     db_path = Path("data/temp/data.db")
     with Bert2VecModel(source_path=config().dest_path, in_mem=True) as dest_model:
+
         def my_cb(entries: list[TokenEntry], pk: int, extras: dict[str, Any]) -> None:
             global counter
             counter += 1
@@ -50,7 +53,6 @@ def update_model():
             if counter % config().save_checkpoint_count == 0:
                 print(f"Saving model...")
                 dest_model.save_data()
-
 
         streamer = SQLitePickleStreamer[list[TokenEntry]](
             db_path=db_path,
@@ -62,7 +64,6 @@ def update_model():
         )
 
         streamer.run(my_cb)
-
 
 
 def main():

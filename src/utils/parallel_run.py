@@ -65,7 +65,7 @@ class ParallelRunner:
         return {row[0] for row in self.cur.fetchall()}
 
     # -- Public API ------------------------------------------------------
-    def parallel_run(self, dataset: Dataset, func: Callable[[str], object]) -> None:
+    def parallel_run(self, dataset: Dataset, func: Callable[[str], object], start_index: int = 0) -> None:
         assert self.cur is not None and self.conn is not None
         done = self._already_done()
         total_done = len(done)
@@ -83,7 +83,7 @@ class ParallelRunner:
 
         # ── Process pool setup ────────────────────────────────────────────────
 
-        total_inputs = len(dataset)
+        total_inputs = len(dataset) - start_index
         remaining_inputs = total_inputs - total_done
         if remaining_inputs <= 0:
             print("All inputs already processed.")
@@ -91,6 +91,8 @@ class ParallelRunner:
 
         print(f"Total inputs: {total_inputs:,}")
         print(f"Remaining: {remaining_inputs:,}")
+        if start_index:
+            print(f"Starting from dataset index {start_index:,}")
 
         print(f"Starting with {config().workers_count} workers")
         with ProcessPoolExecutor(max_workers=config().workers_count) as pool:
@@ -102,7 +104,8 @@ class ParallelRunner:
             last_log = start_time
             log_interval = config().log_interval_seconds
 
-            for chunk in chunked(dataset, config().chunk_size):
+            dataset_iter = itertools.islice(dataset, start_index, None)
+            for chunk in chunked(dataset_iter, config().chunk_size):
                 if stop_submitting:
                     break
 
@@ -165,7 +168,7 @@ class ParallelRunner:
             print(f"All done. Processed {processed:,} strings in {format_td(total_time)}")
 
 
-def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object]):
+def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object], start_index: int = 0):
     """Convenience wrapper to maintain backwards compatibility."""
     with ParallelRunner(db_path) as runner:
-        runner.parallel_run(dataset=dataset, func=func)
+        runner.parallel_run(dataset=dataset, func=func, start_index=start_index)
