@@ -67,11 +67,11 @@ def update_model():
 
 
 def main():
-    # print("Loading dataset...")
-    # dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
-    # print("Done loading dataset, starting building model...")
-    # create_entries_db(dataset=dataset)
-    update_model()
+    print("Loading dataset...")
+    dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
+    print("Done loading dataset, starting building model...")
+    create_entries_db(dataset=dataset, start_index=18419837)
+    # update_model()
 
 
 if __name__ == "__main__":
