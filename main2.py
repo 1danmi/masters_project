@@ -1,6 +1,5 @@
 import logging
 from pathlib import Path
-from functools import partial
 from typing import Any
 
 from datasets import load_dataset, Dataset
@@ -8,6 +7,7 @@ from datasets import load_dataset, Dataset
 from src.config import config
 from src.bert_2_vec_model import Bert2VecModel
 from src.data_models import TokenEntry
+from src.utils.model_worker import init_worker
 from src.utils.parallel_run import parallel_run
 from src.utils.parsing_utils import unite_sentence_tokens
 from src.utils.sqlite_pickle_streamer import SQLitePickleStreamer
@@ -33,9 +33,13 @@ def get_examples_with_word(
 
 def create_entries_db(dataset: Dataset, start_index: int = 0):
     db_path = Path("data/temp/data.db")
-    with Bert2VecModel(source_path=config().bert2vec_path, in_mem=False) as bert2vec_model:
-        func = partial(unite_sentence_tokens, bert2vec_model=bert2vec_model)
-        parallel_run(db_path=db_path, dataset=dataset, func=func, start_index=start_index)
+    parallel_run(
+        db_path=db_path,
+        dataset=dataset,
+        func=unite_sentence_tokens,
+        start_index=start_index,
+        initializer=init_worker,
+    )
 
 
 counter = 0

@@ -7,7 +7,7 @@ import itertools
 from time import time
 from pathlib import Path
 from datetime import timedelta
-from typing import Iterable, Callable
+from typing import Iterable, Callable, Optional, Tuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from datasets import Dataset
@@ -65,7 +65,14 @@ class ParallelRunner:
         return {row[0] for row in self.cur.fetchall()}
 
     # -- Public API ------------------------------------------------------
-    def parallel_run(self, dataset: Dataset, func: Callable[[str], object], start_index: int = 0) -> None:
+    def parallel_run(
+        self,
+        dataset: Dataset,
+        func: Callable[[str], object],
+        start_index: int = 0,
+        initializer: Optional[Callable[[], None]] = None,
+        initargs: Tuple = (),
+    ) -> None:
         assert self.cur is not None and self.conn is not None
         done = self._already_done()
         total_done = len(done)
@@ -95,8 +102,13 @@ class ParallelRunner:
             print(f"Starting from dataset index {start_index:,}")
 
         print(f"Starting with {config().workers_count} workers")
-        with ProcessPoolExecutor(max_workers=config().workers_count) as pool:
+        with ProcessPoolExecutor(
+            max_workers=config().workers_count,
+            initializer=initializer,
+            initargs=initargs,
+        ) as pool:
             futures = {}
+            pending_rows: list[tuple[str, bytes]] = []
             inserted_since_commit = 0
             processed = 0
 
@@ -118,17 +130,19 @@ class ParallelRunner:
                     try:
                         result_obj = future.result()
                         pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
-                        self.cur.execute(
-                            f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
-                            (s, pickled),
-                        )
+                        pending_rows.append((s, pickled))
                         inserted_since_commit += 1
                         processed += 1
                     except Exception as e:
                         print(f"Error processing {s!r}: {e!r}")
 
                     if inserted_since_commit >= config().save_checkpoint_count:
+                        self.cur.executemany(
+                            f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
+                            pending_rows,
+                        )
                         self.conn.commit()
+                        pending_rows.clear()
                         inserted_since_commit = 0
 
                     if stop_submitting:
@@ -154,21 +168,37 @@ class ParallelRunner:
                 try:
                     result_obj = future.result()
                     pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
-                    self.cur.execute(
-                        f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
-                        (s, pickled),
-                    )
+                    pending_rows.append((s, pickled))
                     processed += 1
                 except Exception as e:
                     print(f"Error processing {s!r}: {e!r}")
 
-            self.conn.commit()
+            if pending_rows:
+                self.cur.executemany(
+                    f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
+                    pending_rows,
+                )
+                self.conn.commit()
+                pending_rows.clear()
             total_time = time() - start_time
 
             print(f"All done. Processed {processed:,} strings in {format_td(total_time)}")
 
 
-def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object], start_index: int = 0):
+def parallel_run(
+    db_path: Path,
+    dataset: Dataset,
+    func: Callable[[str], object],
+    start_index: int = 0,
+    initializer: Optional[Callable[[], None]] = None,
+    initargs: Tuple = (),
+) -> None:
     """Convenience wrapper to maintain backwards compatibility."""
     with ParallelRunner(db_path) as runner:
-        runner.parallel_run(dataset=dataset, func=func, start_index=start_index)
+        runner.parallel_run(
+            dataset=dataset,
+            func=func,
+            start_index=start_index,
+            initializer=initializer,
+            initargs=initargs,
+        )

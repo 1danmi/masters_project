@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Final
+from typing import Final, Tuple, List
 
 import torch
 import numpy as np
@@ -19,34 +19,38 @@ def get_bert_model(pretrained_model_name: str) -> BertModel:
     return BertModel.from_pretrained(pretrained_model_name, output_hidden_states=True)
 
 
-def get_bert_vec(token: str, sentence: str) -> np.ndarray:
-    # 1. Load the BERT tokenizer and model.
+def get_tokens_and_vectors(sentence: str) -> Tuple[List[str], List[np.ndarray]]:
+    """Tokenize *sentence* and return aligned BERT vectors for all tokens.
+
+    The sentence is encoded only once and vectors are extracted for every token,
+    avoiding multiple forward passes through the BERT model.
+    """
+
     tokenizer = get_bert_tokenizer(BERT_PRETRAINED_NAME)
     model = get_bert_model(BERT_PRETRAINED_NAME)
 
-    # 2. Convert the sentence to tokens as PyTorch tensors.
-    inputs = tokenizer(sentence, return_tensors="pt")
+    # Avoid adding special tokens so that the output aligns with ``tokenize``
+    tokens = tokenizer.tokenize(sentence)
+    inputs = tokenizer(sentence, return_tensors="pt", add_special_tokens=False)
 
-    # 3. Run the sentence through the BERT model without back-propagation.
     with torch.no_grad():
         outputs = model(**inputs)
 
-    # 4. Since BERT doesn't have an output layer, the last hidden layer is our output.
-    output = outputs.last_hidden_state
+    # ``last_hidden_state`` has shape [1, num_tokens, hidden_size]
+    embeddings = outputs.last_hidden_state[0]
+    return tokens, [embeddings[i].numpy() for i in range(len(tokens))]
 
-    # 5. We want to find the specific vector created for our token, so we first need to re-tokenize the sentence
-    # to split it using BERT's splitting rules.
-    sentence_tokens = tokenizer.tokenize(sentence)
-    # 6. Then We convert the tokens to their IDs.
-    sentence_token_ids = tokenizer.convert_tokens_to_ids(sentence_tokens)
-    # 7. Retrieve the ID of our specific token.
-    token_id = tokenizer.convert_tokens_to_ids(token)
 
-    # 8. We try to extract the token index from the sentence (if it exists in the sentence).
+def get_bert_vec(token: str, sentence: str) -> np.ndarray:
+    """Return the BERT vector for *token* inside *sentence*.
+
+    This helper now delegates to :func:`get_tokens_and_vectors` and is kept for
+    backwards compatibility.
+    """
+
+    tokens, vectors = get_tokens_and_vectors(sentence)
     try:
-        token_index = sentence_token_ids.index(token_id)
+        idx = tokens.index(token)
     except ValueError:
         raise ValueError(f"Token '{token}' not found in the sentence '{sentence}'")
-
-    # 9. Extract the specific embedding for our token.
-    return output[0, token_index, :].numpy()
+    return vectors[idx]
