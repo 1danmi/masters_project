@@ -1,4 +1,3 @@
-import logging
 from collections import Counter
 from typing import List, Tuple
 
@@ -7,10 +6,7 @@ import numpy as np
 from src.data_models import TokenEntry
 from src.utils.model_worker import get_model
 from src.utils.models_utils import get_tokens_and_vectors
-
-
-def get_bow(tokens: List[str], idx: int, size: int = 5) -> List[str]:
-    return tokens[idx - size if idx > size else 0 : idx] + tokens[idx + 1 : idx + size + 1]
+from src.utils.tokenization_utils import get_bow
 
 
 def unite_tokens(token_list: List[Tuple[str, np.ndarray]]) -> Tuple[str, np.ndarray]:

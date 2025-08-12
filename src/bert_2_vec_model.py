@@ -10,7 +10,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from src.config import config
 from src.data_models import Embeddings, TokenEntry, TokenEntries
 from src.utils.tf_utils import get_bow_idf_dict
-from src.utils.parsing_utils import tokenize_sentence, get_bow
+from src.utils.tokenization_utils import tokenize_sentence, get_bow
 from src.utils.models_utils import BERT_VECTOR_SIZE, get_bert_vec
 
 ACCEPT_THRESHOLD: Final[float] = config().accept_threshold
@@ -67,7 +67,6 @@ class Bert2VecModel:
             with shelve.open(source_file_path) as s:
                 self._embeddings = dict(s)  # read whole
             print(f"Finished loading model with {len(self._embeddings)}...")
-
 
     def save_data(self) -> None:
         if isinstance(self._embeddings, dict):
