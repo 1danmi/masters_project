@@ -50,3 +50,42 @@ def get_bert_vec(token: str, sentence: str) -> np.ndarray:
 
     # 9. Extract the specific embedding for our token.
     return output[0, token_index, :].numpy()
+
+# def get_bert_sentence_vectors(sentence: str) -> np.ndarray:
+#     """Return vectors for all tokens in the given sentence."""
+#     # 1. Retrieve the global tokenizer and model already loaded on the
+#     #    configured device (CPU by default).
+#     tokenizer, model = get_bert_tokenizer(BERT_PRETRAINED_NAME), get_bert_model(BERT_PRETRAINED_NAME)
+#     device = config().device
+#
+# # 2. Tokenize the whole sentence and move the tensors to the device.
+#     inputs = tokenizer(sentence, return_tensors="pt").to(device)
+#
+#     # 3. Run the sentence through BERT without computing gradients.
+#     with torch.no_grad():
+#         outputs = model(**inputs)
+#
+#     # 4. Grab the last hidden state for every token, excluding the special
+#     #    [CLS] and [SEP] tokens added by BERT.
+#     hidden_states = outputs.last_hidden_state.squeeze(0)
+#     return hidden_states[1:-1].cpu().numpy()
+#
+#
+# def get_bert_vec(token: str, sentence: str) -> np.ndarray:
+#     """Return the BERT vector of a specific token within a sentence."""
+#     # 1. Load the tokenizer (the model is already cached in
+#     #    ``get_bert_sentence_vectors``).
+#     tokenizer = get_bert_tokenizer(BERT_PRETRAINED_NAME)
+#
+#     # 2. Compute the embeddings for the entire sentence just once.
+#     sentence_vectors = get_bert_sentence_vectors(sentence)
+#
+#     # 3. Tokenize again so we can locate the index of the desired token.
+#     tokens = tokenizer.tokenize(sentence)
+#     try:
+#         token_index = tokens.index(token)
+#     except ValueError:
+#         raise ValueError(f"Token '{token}' not found in the sentence '{sentence}'")
+#
+#     # 4. Return the vector of the specified token.
+#     return sentence_vectors[token_index]

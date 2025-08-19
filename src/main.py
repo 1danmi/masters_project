@@ -38,18 +38,17 @@ def create_entries_db(dataset: Dataset, start_index: int = 0):
         parallel_run(db_path=db_path, dataset=dataset, func=func, start_index=start_index)
 
 
-counter = 0
+counter = 1
 
 
 def update_model():
     db_path = Path("data/temp/data.db")
-    with Bert2VecModel(source_path=config().dest_path, in_mem=True, new_model=True) as dest_model:
-
+    with Bert2VecModel(source_path=config().dest_path, in_mem=False) as dest_model:
         def my_cb(entries: list[TokenEntry], pk: int, extras: dict[str, Any]) -> None:
             global counter
-            counter += 1
             for entry in entries:
                 dest_model.add_entry(entry)
+                counter += 1
             if counter % config().save_checkpoint_count == 0:
                 dest_model.save_data()
                 print(f"Saving model, currently holding {len(dest_model._embeddings)}...")
@@ -59,7 +58,7 @@ def update_model():
             table=config().results_table,
             pk_col=config().index_columns,
             blob_col=config().entries_column,
-            delete_processed=True,
+            delete_processed=False,
             extra_cols=[config().input_column],
         )
 
@@ -67,11 +66,11 @@ def update_model():
 
 
 def main():
-    print("Loading dataset...")
-    dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
-    print("Done loading dataset, starting building model...")
-    create_entries_db(dataset=dataset, start_index=18419837)
-    # update_model()
+    # print("Loading dataset...")
+    # dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
+    # print("Done loading dataset, starting building model...")
+    # create_entries_db(dataset=dataset, start_index=33164770)
+    update_model()
 
 
 if __name__ == "__main__":

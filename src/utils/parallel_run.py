@@ -69,6 +69,7 @@ class ParallelRunner:
         assert self.cur is not None and self.conn is not None
         done = self._already_done()
         total_done = len(done)
+        start_index = start_index + total_done
         print(f"Resuming: {total_done:,}/{len(dataset):,} already processed")
 
         # ── Graceful Ctrl‑C handling ───────────────────────────────────────────
@@ -83,8 +84,8 @@ class ParallelRunner:
 
         # ── Process pool setup ────────────────────────────────────────────────
 
-        total_inputs = len(dataset) - start_index
-        remaining_inputs = total_inputs - total_done
+        total_inputs = len(dataset)
+        remaining_inputs = total_inputs - start_index
         if remaining_inputs <= 0:
             print("All inputs already processed.")
             return
@@ -99,7 +100,7 @@ class ParallelRunner:
             futures = {}
             inserted_since_commit = 0
             processed = 0
-
+            last_processed = 0
             start_time = time()
             last_log = start_time
             log_interval = config().log_interval_seconds
@@ -144,9 +145,11 @@ class ParallelRunner:
                             f"Progress: {processed:,}/{remaining_inputs:,} "
                             f"({100 * processed / remaining_inputs:.1f}%) – "
                             f"Elapsed: {format_td(elapsed)}, "
-                            f"ETA: {format_td(remaining)}"
+                            f"ETA: {format_td(remaining)}, "
+                            f"Last processed: {processed-last_processed}"
                         )
                         last_log = now
+                        last_processed = processed
 
             # In case Ctrl+C was hit
             for future in as_completed(list(futures)):
