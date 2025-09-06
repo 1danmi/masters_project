@@ -66,3 +66,49 @@ def unite_sentence_tokens(sentence: str, bert2vec_model, bow_size: int = 5) -> l
 
     # We iterate the sentence from the end to start, so we need to reverse the order of the final results.
     return entries[::-1]
+
+
+def disambiguate_sentence_tokens(sentence: str, bert2vec_model, bow_size: int = 5) -> str:
+    """Return the sentence with ambiguous tokens replaced by their closest entry.
+
+    The function tokenizes ``sentence`` using the BERT tokenizer and merges split
+    word-piece tokens (``##`` prefixes) back into full words. For each merged
+    token, if ``bert2vec_model`` holds more than one entry for that token, the
+    entry with the closest bag-of-words (BOW) context is selected using
+    ``get_entry_by_bow``. The token is then replaced with
+    ``f"{token}{index}"`` where ``index`` is the position of the chosen entry in
+    the model. Tokens with zero or one entry remain unchanged. Punctuation is
+    kept in its original position.
+    """
+
+    tokenizer = get_bert_tokenizer(config().bert_pretrained_name)
+    tokens = tokenizer.tokenize(sentence)
+
+    # Merge word-piece tokens from end to start to rebuild full words
+    idx = len(tokens) - 1
+    buffer: list[str] = []
+    merged_tokens: list[str] = []
+    while idx > -1:
+        buffer.append(tokens[idx])
+        if not tokens[idx].startswith("##"):
+            merged_tokens.append("".join(t.removeprefix("##") for t in buffer[::-1]))
+            buffer = []
+        idx -= 1
+    merged_tokens = merged_tokens[::-1]
+
+    # Resolve ambiguous tokens using the model
+    resolved_tokens: list[str] = []
+    for i, token in enumerate(merged_tokens):
+        entries = bert2vec_model[token] or []
+        if len(entries) > 1:
+            bow = get_bow(merged_tokens, i, size=bow_size)
+            entry = bert2vec_model.get_entry_by_bow(token=token, bow=bow)
+            if entry is not None:
+                try:
+                    idx_entry = next(j for j, e in enumerate(entries) if e is entry or e == entry)
+                    token = f"{token}{idx_entry}"
+                except StopIteration:
+                    pass
+        resolved_tokens.append(token)
+
+    return tokenizer.convert_tokens_to_string(resolved_tokens)
