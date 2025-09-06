@@ -1,10 +1,8 @@
 import logging
 from pathlib import Path
-from functools import partial
 from typing import Any
 
 from datasets import load_dataset, Dataset
-from tqdm import tqdm
 
 from src.config import config
 from src.bert_2_vec_model import Bert2VecModel
@@ -32,11 +30,57 @@ def get_examples_with_word(
     raise ValueError(f"Word '{word}' not found enough times in the book corpus.")
 
 
-def create_entries_db(dataset: Dataset, start_index: int = 0):
+_worker_model: Bert2VecModel | None = None
+
+
+def _init_worker(model_path: str) -> None:
+    global _worker_model
+    _worker_model = Bert2VecModel(source_path=model_path, in_mem=False)
+
+
+def _unite_worker(sentence: str):
+    assert _worker_model is not None
+    return unite_sentence_tokens(sentence=sentence, bert2vec_model=_worker_model)
+
+
+def _disambiguate_worker(sentence: str) -> str:
+    assert _worker_model is not None
+    return disambiguate_sentence_tokens(sentence=sentence, bert2vec_model=_worker_model)
+
+
+def create_entries_db(dataset: Dataset, start_index: int = 0) -> None:
     db_path = Path("data/temp/data.db")
-    with Bert2VecModel(source_path=config().bert2vec_path, in_mem=False) as bert2vec_model:
-        func = partial(unite_sentence_tokens, bert2vec_model=bert2vec_model)
-        parallel_run(db_path=db_path, dataset=dataset, func=func, start_index=start_index)
+    parallel_run(
+        db_path=db_path,
+        dataset=dataset,
+        func=_unite_worker,
+        start_index=start_index,
+        initializer=_init_worker,
+        initargs=(config().bert2vec_path,),
+    )
+
+
+def disambiguate_dataset(dataset: Dataset, model_path: str, start_index: int = 0) -> None:
+    """Run ``disambiguate_sentence_tokens`` on ``dataset`` in parallel.
+
+    Results are stored as plain text in a SQLite database whose path is
+    configured via ``config().disambiguated_db_path``. Each row is keyed by the
+    original dataset index so the output can be matched back to its source
+    sentence. The underlying runner supports resuming by reading existing
+    entries from the database and can be interrupted with Ctrl-C.
+    """
+
+    db_path = Path(config().disambiguated_db_path)
+    parallel_run(
+        db_path=db_path,
+        dataset=dataset,
+        func=_disambiguate_worker,
+        start_index=start_index,
+        use_pickle=False,
+        input_unique=False,
+        initializer=_init_worker,
+        initargs=(model_path,),
+    )
 
 
 counter = 1
@@ -45,6 +89,7 @@ counter = 1
 def update_model():
     db_path = Path("data/temp/data.db")
     with Bert2VecModel(source_path=config().dest_path, in_mem=False) as dest_model:
+
         def my_cb(entries: list[TokenEntry], pk: int, extras: dict[str, Any]) -> None:
             global counter
             for entry in entries:
@@ -65,28 +110,20 @@ def update_model():
 
         streamer.run(my_cb)
 
+
 def replace_tokens(model: Bert2VecModel, sentence: str):
-        # sentence = "The bank is very unprofessional today"
-        # sentence = "The gross river bank was really far away."
-        print(disambiguate_sentence_tokens(sentence=sentence, bert2vec_model=model))
+    # sentence = "The bank is very unprofessional today"
+    # sentence = "The gross river bank was really far away."
+    print(disambiguate_sentence_tokens(sentence=sentence, bert2vec_model=model))
 
 
 def main():
     # print("Loading dataset...")
     dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
-    # print("Done loading dataset, starting building model...")
+    print("Done loading dataset, starting building model...")
     # create_entries_db(dataset=dataset, start_index=33164770)
     # update_model()
-    with Bert2VecModel(source_path=config().dest_path, in_mem=False) as model:
-        count = 0
-        while count < 10:
-            for text in dataset:
-                if " book " in text["text"]:
-                    replace_tokens(model=model, sentence=text["text"])
-                    count += 1
-
-
-
+    disambiguate_dataset(dataset=dataset, model_path=config().dest_path, )
 
 
 if __name__ == "__main__":
