@@ -68,7 +68,15 @@ class ParallelRunner:
         return {int(row[0]) for row in self.cur.fetchall()}
 
     # -- Public API ------------------------------------------------------
-    def parallel_run(self, dataset: Dataset, func: Callable[[str], object], start_index: int = 0) -> None:
+    def parallel_run(
+        self,
+        dataset: Dataset,
+        func: Callable[[str], object],
+        start_index: int = 0,
+        *,
+        initializer: Callable | None = None,
+        initargs: tuple | None = None,
+    ) -> None:
         assert self.cur is not None and self.conn is not None
         done = self._already_done()
         total_done = len(done)
@@ -101,7 +109,11 @@ class ParallelRunner:
             print(f"Starting from dataset index {start_index:,}")
 
         print(f"Starting with {config().workers_count} workers")
-        with ProcessPoolExecutor(max_workers=config().workers_count) as pool:
+        with ProcessPoolExecutor(
+            max_workers=config().workers_count,
+            initializer=initializer,
+            initargs=initargs or (),
+        ) as pool:
             futures = {}
             inserted_since_commit = 0
             processed = 0
@@ -188,7 +200,15 @@ def parallel_run(
     *,
     use_pickle: bool = True,
     input_unique: bool = True,
+    initializer: Callable | None = None,
+    initargs: tuple | None = None,
 ) -> None:
     """Convenience wrapper to maintain backwards compatibility."""
     with ParallelRunner(db_path, use_pickle=use_pickle, input_unique=input_unique) as runner:
-        runner.parallel_run(dataset=dataset, func=func, start_index=start_index)
+        runner.parallel_run(
+            dataset=dataset,
+            func=func,
+            start_index=start_index,
+            initializer=initializer,
+            initargs=initargs,
+        )
