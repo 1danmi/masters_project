@@ -22,6 +22,7 @@ class ProjectConfig(BaseSettings):
     device: str = "cpu"
     write_cache_max_size: int = 25000
     write_cache_flush_seconds: float | None = None
+    disambiguated_db_path: str = "data/temp/disambiguated.db"
 
 
 @lru_cache

@@ -39,12 +39,36 @@ def create_entries_db(dataset: Dataset, start_index: int = 0):
         parallel_run(db_path=db_path, dataset=dataset, func=func, start_index=start_index)
 
 
+def disambiguate_dataset(dataset: Dataset, model_path: str, start_index: int = 0) -> None:
+    """Run ``disambiguate_sentence_tokens`` on ``dataset`` in parallel.
+
+    Results are stored as plain text in a SQLite database whose path is
+    configured via ``config().disambiguated_db_path``. Each row is keyed by the
+    original dataset index so the output can be matched back to its source
+    sentence. The underlying runner supports resuming by reading existing
+    entries from the database and can be interrupted with Ctrl-C.
+    """
+
+    db_path = Path(config().disambiguated_db_path)
+    with Bert2VecModel(source_path=model_path, in_mem=False) as bert2vec_model:
+        func = partial(disambiguate_sentence_tokens, bert2vec_model=bert2vec_model)
+        parallel_run(
+            db_path=db_path,
+            dataset=dataset,
+            func=func,
+            start_index=start_index,
+            use_pickle=False,
+            input_unique=False,
+        )
+
+
 counter = 1
 
 
 def update_model():
     db_path = Path("data/temp/data.db")
     with Bert2VecModel(source_path=config().dest_path, in_mem=False) as dest_model:
+
         def my_cb(entries: list[TokenEntry], pk: int, extras: dict[str, Any]) -> None:
             global counter
             for entry in entries:
@@ -65,10 +89,11 @@ def update_model():
 
         streamer.run(my_cb)
 
+
 def replace_tokens(model: Bert2VecModel, sentence: str):
-        # sentence = "The bank is very unprofessional today"
-        # sentence = "The gross river bank was really far away."
-        print(disambiguate_sentence_tokens(sentence=sentence, bert2vec_model=model))
+    # sentence = "The bank is very unprofessional today"
+    # sentence = "The gross river bank was really far away."
+    print(disambiguate_sentence_tokens(sentence=sentence, bert2vec_model=model))
 
 
 def main():
@@ -84,9 +109,6 @@ def main():
                 if " book " in text["text"]:
                     replace_tokens(model=model, sentence=text["text"])
                     count += 1
-
-
-
 
 
 if __name__ == "__main__":
