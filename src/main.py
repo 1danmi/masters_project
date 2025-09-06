@@ -4,12 +4,13 @@ from functools import partial
 from typing import Any
 
 from datasets import load_dataset, Dataset
+from tqdm import tqdm
 
 from src.config import config
 from src.bert_2_vec_model import Bert2VecModel
 from src.data_models import TokenEntry
 from src.utils.parallel_run import parallel_run
-from src.utils.parsing_utils import unite_sentence_tokens
+from src.utils.parsing_utils import unite_sentence_tokens, disambiguate_sentence_tokens
 from src.utils.sqlite_pickle_streamer import SQLitePickleStreamer
 
 logging.basicConfig()
@@ -64,13 +65,28 @@ def update_model():
 
         streamer.run(my_cb)
 
+def replace_tokens(model: Bert2VecModel, sentence: str):
+        # sentence = "The bank is very unprofessional today"
+        # sentence = "The gross river bank was really far away."
+        print(disambiguate_sentence_tokens(sentence=sentence, bert2vec_model=model))
+
 
 def main():
     # print("Loading dataset...")
-    # dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
+    dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
     # print("Done loading dataset, starting building model...")
     # create_entries_db(dataset=dataset, start_index=33164770)
-    update_model()
+    # update_model()
+    with Bert2VecModel(source_path=config().dest_path, in_mem=False) as model:
+        count = 0
+        while count < 10:
+            for text in dataset:
+                if " book " in text["text"]:
+                    replace_tokens(model=model, sentence=text["text"])
+                    count += 1
+
+
+
 
 
 if __name__ == "__main__":

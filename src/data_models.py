@@ -45,6 +45,26 @@ class TokenEntry(BaseModel):
     def __repr__(self):
         return f"{self.token!r},{self.vec!r},{self.bow!r},{self.count!r}"
 
+    def __eq__(self, other: Any) -> bool:
+        """Safely compare ``TokenEntry`` instances.
+
+        ``numpy`` arrays return an element-wise comparison when using ``==``,
+        which leads to ``ValueError`` in boolean contexts. This method performs a
+        structural comparison using ``np.array_equal`` for vectors and standard
+        equality for the remaining attributes.
+        """
+
+        if not isinstance(other, TokenEntry):
+            return NotImplemented
+        return (
+            self.token == other.token
+            and np.array_equal(self.vec, other.vec)
+            and self.bow == other.bow
+            and self.bow_b2v == other.bow_b2v
+            and self.count == other.count
+            and self.token_id == other.token_id
+        )
+
 
 type TokenEntries = list[TokenEntry]
 
