@@ -8,8 +8,9 @@ from src.config import config
 from src.data_models import TokenEntry
 from src.utils.models_utils import get_bert_tokenizer, get_bert_vec
 
-# if TYPE_CHECKING:
-#     from src.bert_2_vec_model import Bert2VecModel
+if TYPE_CHECKING:
+    from src.bert_2_vec_model import Bert2VecModel
+    from src.compact_bert2vec_model import CompactBert2VecModel
 
 
 def tokenize_sentence(sentence: str) -> list[str]:
@@ -68,12 +69,15 @@ def unite_sentence_tokens(sentence: str, bert2vec_model, bow_size: int = 5) -> l
     return entries[::-1]
 
 
-def disambiguate_sentence_tokens(sentence: str, bert2vec_model, bow_size: int = 5) -> str:
+def disambiguate_sentence_tokens(
+    sentence: str, bert2vec_model: "Bert2VecModel | CompactBert2VecModel", bow_size: int = 5
+) -> str:
     """Return the sentence with ambiguous tokens replaced by their closest entry.
 
     The function tokenizes ``sentence`` using the BERT tokenizer and merges split
     word-piece tokens (``##`` prefixes) back into full words. For each merged
-    token, if ``bert2vec_model`` holds more than one entry for that token, the
+    token, if ``bert2vec_model`` (either a :class:`Bert2VecModel` or a
+    :class:`CompactBert2VecModel`) holds more than one entry for that token, the
     entry with the closest bag-of-words (BOW) context is selected using
     ``get_entry_by_bow``. The token is then replaced with
     ``f"{token}{index}"`` where ``index`` is the position of the chosen entry in
@@ -99,13 +103,21 @@ def disambiguate_sentence_tokens(sentence: str, bert2vec_model, bow_size: int = 
     # Resolve ambiguous tokens using the model
     resolved_tokens: list[str] = []
     for i, token in enumerate(merged_tokens):
-        entries = bert2vec_model[token] or []
+        if hasattr(bert2vec_model, "_token_to_id") and hasattr(bert2vec_model, "_embeddings"):
+            token_id = bert2vec_model._token_to_id.get(token)  # type: ignore[attr-defined]
+            entries = (
+                bert2vec_model._embeddings.get(token_id, [])  # type: ignore[attr-defined]
+                if token_id is not None
+                else []
+            )
+        else:
+            entries = bert2vec_model[token] or []  # type: ignore[index]
         if len(entries) > 1:
             bow = get_bow(merged_tokens, i, size=bow_size)
             entry = bert2vec_model.get_entry_by_bow(token=token, bow=bow)
             if entry is not None:
                 try:
-                    idx_entry = next(j for j, e in enumerate(entries) if e is entry or e == entry)
+                    idx_entry = next(j for j, e in enumerate(entries) if e is entry)
                     token = f"{token}{idx_entry}"
                 except StopIteration:
                     pass
