@@ -1,15 +1,21 @@
 from pathlib import Path
 import pickle
+import os
+from tqdm import tqdm
 import gzip
 import numpy as np
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Iterable
+import logging
 
 from sklearn.metrics.pairwise import cosine_similarity
 
 from .bert_2_vec_model import Bert2VecModel
 from .utils.parsing_utils import tokenize_sentence, get_bow
 from .utils.models_utils import get_bert_vec
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -66,16 +72,14 @@ class CompactBert2VecModel:
             return idx
 
         embeddings: Dict[int, List[CompactTokenEntry]] = {}
-        for token, entries in model._embeddings.items():  # type: ignore[attr-defined]
+        total_tokens = len(model._embeddings)
+        logger.info("Starting conversion of %d tokens", total_tokens)
+        for idx, (token, entries) in enumerate(model._embeddings.items(), start=1):  # type: ignore[attr-defined]
             token_id = get_id(token)
             compact_entries: List[CompactTokenEntry] = []
             for entry in entries:
-                bow_arr = np.array(
-                    [[get_id(w), c] for w, c in entry.bow.items()], dtype=np.int32
-                )
-                bow_b2v_arr = np.array(
-                    [[get_id(w), c] for w, c in entry.bow_b2v.items()], dtype=np.int32
-                )
+                bow_arr = np.array([[get_id(w), c] for w, c in entry.bow.items()], dtype=np.int32)
+                bow_b2v_arr = np.array([[get_id(w), c] for w, c in entry.bow_b2v.items()], dtype=np.int32)
                 compact_entries.append(
                     CompactTokenEntry(
                         token_id=token_id,
@@ -86,7 +90,15 @@ class CompactBert2VecModel:
                     )
                 )
             embeddings[token_id] = compact_entries
+            if idx % max(1, total_tokens // 100) == 0:
+                logger.info(
+                    "Converted %d/%d tokens (%.1f%%)",
+                    idx,
+                    total_tokens,
+                    (idx / total_tokens) * 100,
+                )
 
+        logger.info("Finished converting tokens")
         return cls(embeddings=embeddings, id_to_token=id_to_token, token_to_id=token_to_id)
 
     # ------------------------------------------------------------------
@@ -133,9 +145,7 @@ class CompactBert2VecModel:
         for entry in entries:
             bow_dict = {wid: cnt for wid, cnt in entry.bow}
             score = sum(
-                idf.get(wid, 0.0)
-                * ((bow_dict.get(wid, 0) * (k1 + 1)) / (bow_dict.get(wid, 0) + k1))
-                for wid in bow_ids
+                idf.get(wid, 0.0) * ((bow_dict.get(wid, 0) * (k1 + 1)) / (bow_dict.get(wid, 0) + k1)) for wid in bow_ids
             )
             results.append((entry, score))
         results.sort(key=lambda x: x[1], reverse=True)
@@ -151,9 +161,7 @@ class CompactBert2VecModel:
         bow = get_bow(tokens=tokens, idx=token_idx)
         return self.get_entry_by_bow(token=token, bow=bow)
 
-    def get_entry_by_vec(
-        self, token: str, vec: np.ndarray
-    ) -> Tuple[CompactTokenEntry | None, float]:
+    def get_entry_by_vec(self, token: str, vec: np.ndarray) -> Tuple[CompactTokenEntry | None, float]:
         token_id = self._token_to_id.get(token)
         if token_id is None:
             return None, -1.0
@@ -173,6 +181,8 @@ class CompactBert2VecModel:
     def save(self, path: str | Path) -> None:
         """Persist model data to ``path`` using gzip-compressed pickle."""
         path = Path(path)
+        if not os.path.exists(path.parent):
+            os.makedirs(path.parent)
         with gzip.open(path, "wb") as f:
             pickle.dump(
                 {
@@ -197,18 +207,18 @@ class CompactBert2VecModel:
         )
 
     @classmethod
-    def convert_and_save(
-        cls, model: Bert2VecModel, path: str | Path
-    ) -> "CompactBert2VecModel":
+    def convert_and_save(cls, model: Bert2VecModel, path: str | Path) -> "CompactBert2VecModel":
         """Convert ``model`` to compact form and persist it to ``path``."""
+        logger.info("Converting model and saving compact version to %s", path)
         compact = cls.from_bert2vec(model)
         compact.save(path)
+        logger.info("Saved compact model to %s", path)
         return compact
 
     @classmethod
-    def convert_from_path(
-        cls, source_path: str | Path, dest_path: str | Path
-    ) -> "CompactBert2VecModel":
+    def convert_from_path(cls, source_path: str | Path, dest_path: str | Path) -> "CompactBert2VecModel":
         """Load a ``Bert2VecModel`` from ``source_path`` and save compact version."""
-        with Bert2VecModel(source_path=source_path, in_mem=True) as model:
+        print("hello")
+        logger.info("Loading Bert2VecModel from %s", source_path)
+        with Bert2VecModel(source_path=source_path, in_mem=False) as model:
             return cls.convert_and_save(model, dest_path)

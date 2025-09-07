@@ -4,6 +4,7 @@ from typing import Any
 
 from datasets import load_dataset, Dataset
 
+from src import CompactBert2VecModel
 from src.config import config
 from src.bert_2_vec_model import Bert2VecModel
 from src.data_models import TokenEntry
@@ -118,12 +119,22 @@ def replace_tokens(model: Bert2VecModel, sentence: str):
 
 
 def main():
+    import logging, sys
+
+    # Configure the logger
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        handlers=[logging.StreamHandler(sys.stdout)],
+        force=True,  # <— wipes existing ROOT handlers so this actually takes effect
+    )
     # print("Loading dataset...")
-    dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
-    print("Done loading dataset, starting building model...")
+    # dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
+    # print("Done loading dataset, starting building model...")
     # create_entries_db(dataset=dataset, start_index=33164770)
     # update_model()
-    disambiguate_dataset(dataset=dataset, model_path=config().dest_path, )
+    # disambiguate_dataset(dataset=dataset, model_path=config().dest_path, )\
+    CompactBert2VecModel.convert_from_path(source_path=config().dest_path, dest_path=config().compact_dest_path)
 
 
 if __name__ == "__main__":
