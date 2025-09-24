@@ -6,6 +6,7 @@ import sqlite3
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 
 @dataclass(slots=True)
@@ -39,11 +40,20 @@ class SQLiteSentenceStreamer:
 
     # ------------------------------------------------------------------
     def __iter__(self) -> Iterator[list[str]]:
-        conn = sqlite3.connect(self.db_path)
+        # Open the database in read-only mode so training never blocks writers
+        # for long-running PRAGMA updates, and increase the busy timeout so we
+        # wait briefly if a concurrent writer has a transaction open.
+        resolved = self.db_path.resolve()
+        db_uri = f"file:{quote(str(resolved), safe='/:\\')}?mode=ro"
+        conn = sqlite3.connect(
+            db_uri,
+            uri=True,
+            timeout=30.0,
+        )
         try:
-            conn.execute("PRAGMA journal_mode=OFF;")
-            conn.execute("PRAGMA synchronous=OFF;")
-            conn.execute("PRAGMA temp_store=MEMORY;")
+            conn.execute("PRAGMA busy_timeout = 30000;")
+            conn.execute("PRAGMA query_only = ON;")
+            conn.execute("PRAGMA temp_store = MEMORY;")
             cursor = conn.cursor()
             last_pk = -1
             sql = (
