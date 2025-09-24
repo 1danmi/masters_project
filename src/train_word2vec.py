@@ -7,8 +7,8 @@ from pathlib import Path
 from gensim.models import Word2Vec
 from gensim.models.callbacks import CallbackAny2Vec
 
-from src.config import config
 from src.utils.sqlite_sentence_streamer import SQLiteSentenceStreamer
+from src.word2vec_config import Word2VecConfig, word2vec_config
 
 
 class EpochLogger(CallbackAny2Vec):
@@ -26,83 +26,36 @@ class EpochLogger(CallbackAny2Vec):
         self.epoch += 1
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Train a Word2Vec model from disambiguated sentences stored in SQLite."
-    )
-    parser.add_argument(
-        "--db-path", type=Path, default=Path(config().disambiguated_db_path), help="Path to the SQLite database."
-    )
-    parser.add_argument("--table", default=config().results_table, help="Table containing the disambiguated sentences.")
-    parser.add_argument(
-        "--text-column", default=config().disambiguated_column, help="Column with the tokenized sentences."
-    )
-    parser.add_argument(
-        "--pk-column", default=config().index_columns, help="Primary key column for deterministic ordering."
-    )
-    parser.add_argument("--batch-size", type=int, default=50_000, help="How many rows to fetch per SQLite query.")
-    parser.add_argument(
-        "--workers", type=int, default=config().workers_count, help="Number of worker threads for Word2Vec."
-    )
-    parser.add_argument("--vector-size", type=int, default=100, help="Embedding dimensionality (default: 100).")
-    parser.add_argument("--window", type=int, default=5, help="Context window size (default: 5).")
-    parser.add_argument(
-        "--min-count", type=int, default=5, help="Ignore tokens with total frequency lower than this (default: 5)."
-    )
-    parser.add_argument(
-        "--sample", type=float, default=1e-3, help="Subsampling threshold for frequent words (default: 1e-3)."
-    )
-    parser.add_argument("--negative", type=int, default=5, help="Negative sampling count (default: 5).")
-    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs (default: 5).")
-    parser.add_argument("--sg", action="store_true", help="Use skip-gram instead of CBOW (default: CBOW).")
-    parser.add_argument("--lowercase", action="store_true", help="Lowercase sentences before tokenization.")
-    parser.add_argument(
-        "--no-strip", dest="strip", action="store_false", help="Disable stripping whitespace from sentences."
-    )
-    parser.add_argument("--output-model", type=Path, required=True, help="Where to save the trained Word2Vec model.")
-    parser.add_argument(
-        "--vectors-output",
-        type=Path,
-        help=(
-            "Optional path to also export the vectors in word2vec format. Use a .txt or .vec extension for text output, "
-            "or .bin for binary."
-        ),
-    )
-    parser.add_argument("--log-level", default="INFO", help="Python logging level (default: INFO).")
-    parser.add_argument(
-        "--no-loss", dest="compute_loss", action="store_false", help="Skip loss tracking to reduce overhead."
-    )
-    parser.set_defaults(strip=True, compute_loss=True)
-    return parser
+def train(cfg: Word2VecConfig | None = None) -> None:
+    if cfg is None:
+        cfg = word2vec_config()
 
-
-def train(args: argparse.Namespace) -> None:
     logging.basicConfig(
-        level=getattr(logging, args.log_level.upper(), logging.INFO), format="%(asctime)s %(levelname)s %(message)s"
+        level=getattr(logging, cfg.log_level.upper(), logging.INFO), format="%(asctime)s %(levelname)s %(message)s"
     )
     logger = logging.getLogger(__name__)
 
     streamer = SQLiteSentenceStreamer(
-        db_path=args.db_path,
-        table=args.table,
-        text_column=args.text_column,
-        pk_column=args.pk_column,
-        batch_size=args.batch_size,
-        lowercase=args.lowercase,
-        strip=args.strip,
+        db_path=cfg.db_path,
+        table=cfg.table,
+        text_column=cfg.text_column,
+        pk_column=cfg.pk_column,
+        batch_size=cfg.batch_size,
+        lowercase=cfg.lowercase,
+        strip=cfg.strip,
     )
 
     corpus_size = len(streamer)
-    logger.info("Detected %s sentences in %s", f"{corpus_size:,}", args.db_path)
+    logger.info("Detected %s sentences in %s", f"{corpus_size:,}", cfg.db_path)
 
     model = Word2Vec(
-        vector_size=args.vector_size,
-        window=args.window,
-        min_count=args.min_count,
-        sample=args.sample,
-        negative=args.negative,
-        workers=max(1, args.workers),
-        sg=1 if args.sg else 0,
+        vector_size=cfg.vector_size,
+        window=cfg.window,
+        min_count=cfg.min_count,
+        sample=cfg.sample,
+        negative=cfg.negative,
+        workers=max(1, cfg.workers),
+        sg=1 if cfg.sg else 0,
     )
 
     logger.info("Building vocabulary…")
@@ -110,33 +63,106 @@ def train(args: argparse.Namespace) -> None:
     logger.info("Vocabulary size: %s", f"{len(model.wv):,}")
 
     callbacks: list[CallbackAny2Vec] = []
-    if args.compute_loss:
+    if cfg.compute_loss:
         callbacks.append(EpochLogger())
 
-    logger.info("Starting training for %d epochs with %d worker threads", args.epochs, model.workers)
+    logger.info("Starting training for %d epochs with %d worker threads", cfg.epochs, model.workers)
     model.train(
         streamer,
         total_examples=model.corpus_count,
-        epochs=args.epochs,
-        compute_loss=args.compute_loss,
+        epochs=cfg.epochs,
+        compute_loss=cfg.compute_loss,
         callbacks=callbacks,
     )
 
-    args.output_model.parent.mkdir(parents=True, exist_ok=True)
-    model.save(str(args.output_model))
-    logger.info("Model saved to %s", args.output_model)
+    cfg.output_model.parent.mkdir(parents=True, exist_ok=True)
+    model.save(str(cfg.output_model))
+    logger.info("Model saved to %s", cfg.output_model)
 
-    if args.vectors_output:
-        args.vectors_output.parent.mkdir(parents=True, exist_ok=True)
-        binary = args.vectors_output.suffix.lower() == ".bin"
-        model.wv.save_word2vec_format(str(args.vectors_output), binary=binary)
-        logger.info("Vectors exported to %s", args.vectors_output)
+    if cfg.vectors_output:
+        cfg.vectors_output.parent.mkdir(parents=True, exist_ok=True)
+        binary = cfg.vectors_output.suffix.lower() == ".bin"
+        model.wv.save_word2vec_format(str(cfg.vectors_output), binary=binary)
+        logger.info("Vectors exported to %s", cfg.vectors_output)
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = build_parser()
+    base_cfg = word2vec_config()
+
+    parser = argparse.ArgumentParser(
+        description="Train a Word2Vec model from disambiguated sentences stored in SQLite."
+    )
+    parser.add_argument("--db-path", type=Path, default=base_cfg.db_path, help="Path to the SQLite database.")
+    parser.add_argument("--table", default=base_cfg.table, help="Table containing the disambiguated sentences.")
+    parser.add_argument("--text-column", default=base_cfg.text_column, help="Column with the tokenized sentences.")
+    parser.add_argument(
+        "--pk-column", default=base_cfg.pk_column, help="Primary key column for deterministic ordering."
+    )
+    parser.add_argument("--batch-size", type=int, default=base_cfg.batch_size, help="Rows to fetch per SQLite query.")
+    parser.add_argument("--workers", type=int, default=base_cfg.workers, help="Number of worker threads for Word2Vec.")
+    parser.add_argument("--vector-size", type=int, default=base_cfg.vector_size, help="Embedding dimensionality.")
+    parser.add_argument("--window", type=int, default=base_cfg.window, help="Context window size.")
+    parser.add_argument(
+        "--min-count", type=int, default=base_cfg.min_count, help="Ignore tokens with frequency lower than this."
+    )
+    parser.add_argument(
+        "--sample", type=float, default=base_cfg.sample, help="Subsampling threshold for frequent words."
+    )
+    parser.add_argument("--negative", type=int, default=base_cfg.negative, help="Negative sampling count.")
+    parser.add_argument("--epochs", type=int, default=base_cfg.epochs, help="Number of training epochs.")
+    parser.add_argument("--sg", dest="sg", action="store_true", help="Use skip-gram (default: CBOW).")
+    parser.add_argument("--cbow", dest="sg", action="store_false", help="Force the CBOW architecture.")
+    parser.add_argument("--lowercase", dest="lowercase", action="store_true", help="Lowercase sentences.")
+    parser.add_argument("--no-lowercase", dest="lowercase", action="store_false", help="Preserve original casing.")
+    parser.add_argument("--strip", dest="strip", action="store_true", help="Strip whitespace from sentences.")
+    parser.add_argument("--no-strip", dest="strip", action="store_false", help="Disable stripping whitespace.")
+    parser.add_argument(
+        "--output-model", type=Path, default=base_cfg.output_model, help="Where to save the trained Word2Vec model."
+    )
+    parser.add_argument(
+        "--vectors-output",
+        type=Path,
+        default=base_cfg.vectors_output,
+        help=(
+            "Optional path to export the vectors in word2vec format. Use .txt/.vec for text output or .bin for binary."
+        ),
+    )
+    parser.add_argument("--log-level", default=base_cfg.log_level, help="Python logging level.")
+    parser.add_argument("--compute-loss", dest="compute_loss", action="store_true", help="Track training loss.")
+    parser.add_argument("--no-loss", dest="compute_loss", action="store_false", help="Skip loss tracking to reduce overhead.")
+    parser.set_defaults(
+        sg=base_cfg.sg,
+        lowercase=base_cfg.lowercase,
+        strip=base_cfg.strip,
+        compute_loss=base_cfg.compute_loss,
+    )
     args = parser.parse_args(argv)
-    train(args)
+
+    updated_cfg = base_cfg.model_copy(
+        update={
+            "db_path": args.db_path,
+            "table": args.table,
+            "text_column": args.text_column,
+            "pk_column": args.pk_column,
+            "batch_size": args.batch_size,
+            "workers": args.workers,
+            "vector_size": args.vector_size,
+            "window": args.window,
+            "min_count": args.min_count,
+            "sample": args.sample,
+            "negative": args.negative,
+            "epochs": args.epochs,
+            "sg": args.sg,
+            "lowercase": args.lowercase,
+            "strip": args.strip,
+            "output_model": args.output_model,
+            "vectors_output": args.vectors_output,
+            "log_level": args.log_level,
+            "compute_loss": args.compute_loss,
+        }
+    )
+
+    train(updated_cfg)
 
 
 if __name__ == "__main__":
