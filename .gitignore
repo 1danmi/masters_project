@@ -309,3 +309,4 @@ http-client.private.env.json
 
 shared_files
 data
+progress_state.json

@@ -15,16 +15,7 @@ from datasets import Dataset
 from src.config import config
 
 
-SCHEMA_SQL = f"""
-CREATE TABLE IF NOT EXISTS {config().results_table} (
-    {config().index_columns} INTEGER PRIMARY KEY,
-    {config().input_column}  TEXT UNIQUE,
-    {config().entries_column} BLOB NOT NULL
-);
-"""
-
-
-def chunked(it: Iterable[str], size: int) -> Iterable[list[str]]:
+def chunked(it: Iterable, size: int) -> Iterable[list]:
     iterator = iter(it)
     while chunk := list(itertools.islice(iterator, size)):
         yield chunk
@@ -35,8 +26,10 @@ def format_td(seconds: float) -> str:
 
 
 class ParallelRunner:
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, *, use_pickle: bool = True, input_unique: bool = True) -> None:
         self.db_path = db_path
+        self.use_pickle = use_pickle
+        self.input_unique = input_unique
         self.conn: sqlite3.Connection | None = None
         self.cur: sqlite3.Cursor | None = None
 
@@ -56,19 +49,40 @@ class ParallelRunner:
         self.conn = sqlite3.connect(self.db_path)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.cur = self.conn.cursor()
-        self.cur.execute(SCHEMA_SQL)
+        column_type = "BLOB" if self.use_pickle else "TEXT"
+        unique_sql = "UNIQUE" if self.input_unique else ""
+        self.cur.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {config().results_table} (
+                {config().index_columns} INTEGER PRIMARY KEY,
+                {config().input_column}  TEXT {unique_sql},
+                {config().entries_column} {column_type} NOT NULL
+            );
+            """
+        )
         self.conn.commit()
 
-    def _already_done(self) -> set[str]:
+    def _already_done(self) -> set[int]:
         assert self.cur is not None
-        self.cur.execute(f"SELECT {config().input_column} FROM {config().results_table}")
-        return {row[0] for row in self.cur.fetchall()}
+        self.cur.execute(f"SELECT {config().index_columns} FROM {config().results_table}")
+        return {int(row[0]) for row in self.cur.fetchall()}
 
     # -- Public API ------------------------------------------------------
-    def parallel_run(self, dataset: Dataset, func: Callable[[str], object], start_index: int = 0) -> None:
+    def parallel_run(
+        self,
+        dataset: Dataset,
+        func: Callable[[str], object],
+        start_index: int = 0,
+        *,
+        initializer: Callable | None = None,
+        initargs: tuple | None = None,
+    ) -> None:
         assert self.cur is not None and self.conn is not None
         done = self._already_done()
         total_done = len(done)
+        max_done = max(done) + 1 if done else 0
+        if start_index < max_done:
+            start_index = max_done
         print(f"Resuming: {total_done:,}/{len(dataset):,} already processed")
 
         # ── Graceful Ctrl‑C handling ───────────────────────────────────────────
@@ -83,8 +97,8 @@ class ParallelRunner:
 
         # ── Process pool setup ────────────────────────────────────────────────
 
-        total_inputs = len(dataset) - start_index
-        remaining_inputs = total_inputs - total_done
+        total_inputs = len(dataset)
+        remaining_inputs = total_inputs - start_index
         if remaining_inputs <= 0:
             print("All inputs already processed.")
             return
@@ -95,32 +109,40 @@ class ParallelRunner:
             print(f"Starting from dataset index {start_index:,}")
 
         print(f"Starting with {config().workers_count} workers")
-        with ProcessPoolExecutor(max_workers=config().workers_count) as pool:
+        with ProcessPoolExecutor(
+            max_workers=config().workers_count,
+            initializer=initializer,
+            initargs=initargs or (),
+        ) as pool:
             futures = {}
             inserted_since_commit = 0
             processed = 0
-
+            last_processed = 0
             start_time = time()
             last_log = start_time
             log_interval = config().log_interval_seconds
 
-            dataset_iter = itertools.islice(dataset, start_index, None)
+            dataset_iter = itertools.islice(enumerate(dataset), start_index, None)
             for chunk in chunked(dataset_iter, config().chunk_size):
                 if stop_submitting:
                     break
 
-                for s in chunk:
-                    s = s["text"]
-                    futures[pool.submit(func, s)] = s
+                for idx, s in chunk:
+                    text = s["text"]
+                    futures[pool.submit(func, text)] = (idx, text)
 
                 for future in as_completed(list(futures)):
-                    s = futures.pop(future)
+                    idx, s = futures.pop(future)
                     try:
                         result_obj = future.result()
-                        pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
+                        data = (
+                            pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
+                            if self.use_pickle
+                            else result_obj
+                        )
                         self.cur.execute(
-                            f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
-                            (s, pickled),
+                            f"INSERT OR IGNORE INTO {config().results_table} ({config().index_columns}, {config().input_column}, {config().entries_column}) VALUES (?, ?, ?)",
+                            (idx, s, data),
                         )
                         inserted_since_commit += 1
                         processed += 1
@@ -144,19 +166,21 @@ class ParallelRunner:
                             f"Progress: {processed:,}/{remaining_inputs:,} "
                             f"({100 * processed / remaining_inputs:.1f}%) – "
                             f"Elapsed: {format_td(elapsed)}, "
-                            f"ETA: {format_td(remaining)}"
+                            f"ETA: {format_td(remaining)}, "
+                            f"Last processed: {processed-last_processed}"
                         )
                         last_log = now
+                        last_processed = processed
 
             # In case Ctrl+C was hit
             for future in as_completed(list(futures)):
-                s = futures.pop(future)
+                idx, s = futures.pop(future)
                 try:
                     result_obj = future.result()
-                    pickled = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL)
+                    data = pickle.dumps(result_obj, protocol=pickle.HIGHEST_PROTOCOL) if self.use_pickle else result_obj
                     self.cur.execute(
-                        f"INSERT OR IGNORE INTO {config().results_table} ({config().input_column}, {config().entries_column}) VALUES (?, ?)",
-                        (s, pickled),
+                        f"INSERT OR IGNORE INTO {config().results_table} ({config().index_columns}, {config().input_column}, {config().entries_column}) VALUES (?, ?, ?)",
+                        (idx, s, data),
                     )
                     processed += 1
                 except Exception as e:
@@ -168,7 +192,23 @@ class ParallelRunner:
             print(f"All done. Processed {processed:,} strings in {format_td(total_time)}")
 
 
-def parallel_run(db_path: Path, dataset: Dataset, func: Callable[[str], object], start_index: int = 0):
+def parallel_run(
+    db_path: Path,
+    dataset: Dataset,
+    func: Callable[[str], object],
+    start_index: int = 0,
+    *,
+    use_pickle: bool = True,
+    input_unique: bool = True,
+    initializer: Callable | None = None,
+    initargs: tuple | None = None,
+) -> None:
     """Convenience wrapper to maintain backwards compatibility."""
-    with ParallelRunner(db_path) as runner:
-        runner.parallel_run(dataset=dataset, func=func, start_index=start_index)
+    with ParallelRunner(db_path, use_pickle=use_pickle, input_unique=input_unique) as runner:
+        runner.parallel_run(
+            dataset=dataset,
+            func=func,
+            start_index=start_index,
+            initializer=initializer,
+            initargs=initargs,
+        )

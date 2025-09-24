@@ -8,10 +8,11 @@ class ProjectConfig(BaseSettings):
     bert_pretrained_name: str = "bert-base-uncased"
     bert2vec_path: str = "data/shelve-unite/shelve.slv"
     dest_path: str = "D:/temp/dest/shelve.slv"
+    compact_dest_path: str = "D:/temp/dest-compact/shelve.slv"
     accept_threshold: float = 0.69
     radius: float = 0.62
     print_checkpoint_count: int = 1000
-    save_checkpoint_count: int = 1000000
+    save_checkpoint_count: int = 100000
     workers_count: int = os.cpu_count() - 1
     chunk_size: int = 10000
     log_interval_seconds: float = 10
@@ -19,6 +20,10 @@ class ProjectConfig(BaseSettings):
     index_columns: str = "idx"
     input_column: str = "input"
     entries_column: str = "pickled_object"
+    device: str = "cpu"
+    write_cache_max_size: int = 25000
+    write_cache_flush_seconds: float | None = None
+    disambiguated_db_path: str = "data/disambiguated/disambiguated.db"
 
 
 @lru_cache
