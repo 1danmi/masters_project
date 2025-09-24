@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -24,10 +24,10 @@ class SQLiteSentenceStreamer:
     batch_size: int = 50_000
     lowercase: bool = False
     strip: bool = True
+    _row_count: int | None = field(init=False, default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.db_path = Path(self.db_path)
-        self._row_count: int | None = None
 
     # ------------------------------------------------------------------
     def __len__(self) -> int:
