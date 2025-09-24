@@ -48,12 +48,19 @@ def train(cfg: Word2VecConfig | None = None) -> None:
 
     model = Word2Vec(
         vector_size=cfg.vector_size,
+        sg=1 if cfg.sg else 0,
         window=cfg.window,
         min_count=cfg.min_count,
-        sample=cfg.sample,
         negative=cfg.negative,
+        hs=1 if cfg.hs else 0,
+        sample=cfg.sample,
+        alpha=cfg.alpha,
+        min_alpha=cfg.min_alpha,
+        ns_exponent=cfg.ns_exponent,
         workers=max(1, cfg.workers),
-        sg=1 if cfg.sg else 0,
+        batch_words=cfg.batch_words,
+        sorted_vocab=1,
+        seed=cfg.seed,
     )
 
     logger.info("Building vocabulary…")

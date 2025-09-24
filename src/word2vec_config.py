@@ -18,22 +18,32 @@ class Word2VecConfig(BaseSettings):
 
     db_path: Path = Field(default_factory=lambda: Path(config().disambiguated_db_path))
     table: str = Field(default_factory=lambda: config().results_table)
-    text_column: str = Field(default_factory=lambda: config().disambiguated_column)
+    text_column: str = Field(default_factory=lambda: config().input_column)
     pk_column: str = Field(default_factory=lambda: config().index_columns)
     batch_size: int = 50_000
     workers: int = Field(default_factory=lambda: config().workers_count)
 
-    vector_size: int = 100
+    vector_size: int = 300
+    sg: bool = True
     window: int = 5
     min_count: int = 5
-    sample: float = 1e-3
-    negative: int = 5
-    epochs: int = 5
-    sg: bool = False
+    negative: int = 10
+    hs: bool = False
+
+    sample: float = 1e-5
+    alpha: float = 0.025
+    min_alpha: float = 0.0001
+    ns_exponent: float = 0.75
+    batch_words: int = 30000
+    seed: int = 42
+
     lowercase: bool = False
     strip: bool = True
 
-    output_model: Path = Path("models/disambiguated.w2v")
+    epochs: int = 8
+
+
+    output_model: Path = Path("models/original-300.w2v")
     vectors_output: Path | None = None
     log_level: str = "INFO"
     compute_loss: bool = True
