@@ -121,8 +121,6 @@ class SQLitePickleStreamer[T]:
             time.sleep(1)
             tmp.replace(self.state_path)
 
-
-
     @staticmethod
     def _eta(start_time: float, processed: int, total: int) -> float | None:
         if processed == 0:
@@ -168,7 +166,9 @@ class SQLitePickleStreamer[T]:
 
                 rows = self._fetch_chunk(last_pk)
                 if not rows:
-                    print(f"Done. Processed {processed} / {self._rows_to_process} rows.", processed, self._rows_to_process)
+                    print(
+                        f"Done. Processed {processed} / {self._rows_to_process} rows.", processed, self._rows_to_process
+                    )
                     break
 
                 _to_delete: list[int] = []  # PKs to remove after chunk

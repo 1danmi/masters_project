@@ -20,6 +20,7 @@ class ProjectConfig(BaseSettings):
     index_columns: str = "idx"
     input_column: str = "input"
     entries_column: str = "pickled_object"
+    disambiguated_column: str = "disambiguated"
     device: str = "cpu"
     write_cache_max_size: int = 25000
     write_cache_flush_seconds: float | None = None

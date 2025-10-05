@@ -51,6 +51,7 @@ def get_bert_vec(token: str, sentence: str) -> np.ndarray:
     # 9. Extract the specific embedding for our token.
     return output[0, token_index, :].numpy()
 
+
 # def get_bert_sentence_vectors(sentence: str) -> np.ndarray:
 #     """Return vectors for all tokens in the given sentence."""
 #     # 1. Retrieve the global tokenizer and model already loaded on the
