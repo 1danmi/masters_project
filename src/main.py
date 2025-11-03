@@ -31,12 +31,16 @@ def get_examples_with_word(
     raise ValueError(f"Word '{word}' not found enough times in the book corpus.")
 
 
-_worker_model: Bert2VecModel | None = None
+_worker_model: Bert2VecModel | CompactBert2VecModel | None = None
 
 
-def _init_worker(model_path: str) -> None:
+def _init_worker(model_path: str, compact: bool = False) -> None:
+    """Initialize ``_worker_model`` for worker processes."""
     global _worker_model
-    _worker_model = Bert2VecModel(source_path=model_path, in_mem=False)
+    if compact:
+        _worker_model = CompactBert2VecModel.load(model_path)
+    else:
+        _worker_model = Bert2VecModel(source_path=model_path, in_mem=False)
 
 
 def _unite_worker(sentence: str):
@@ -57,11 +61,11 @@ def create_entries_db(dataset: Dataset, start_index: int = 0) -> None:
         func=_unite_worker,
         start_index=start_index,
         initializer=_init_worker,
-        initargs=(config().bert2vec_path,),
+        initargs=(config().bert2vec_path, False),
     )
 
 
-def disambiguate_dataset(dataset: Dataset, model_path: str, start_index: int = 0) -> None:
+def disambiguate_dataset(dataset: Dataset, model_path: str, start_index: int = 0, compact: bool = False) -> None:
     """Run ``disambiguate_sentence_tokens`` on ``dataset`` in parallel.
 
     Results are stored as plain text in a SQLite database whose path is
@@ -80,7 +84,7 @@ def disambiguate_dataset(dataset: Dataset, model_path: str, start_index: int = 0
         use_pickle=False,
         input_unique=False,
         initializer=_init_worker,
-        initargs=(model_path,),
+        initargs=(model_path, compact),
     )
 
 
@@ -112,9 +116,10 @@ def update_model():
         streamer.run(my_cb)
 
 
-def replace_tokens(model: Bert2VecModel, sentence: str):
+def replace_tokens(model_path):
     # sentence = "The bank is very unprofessional today"
-    # sentence = "The gross river bank was really far away."
+    model = CompactBert2VecModel.load(model_path)
+    sentence = "The gross river bank was really far away."
     print(disambiguate_sentence_tokens(sentence=sentence, bert2vec_model=model))
 
 
@@ -128,13 +133,14 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
         force=True,  # <— wipes existing ROOT handlers so this actually takes effect
     )
-    # print("Loading dataset...")
-    # dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
-    # print("Done loading dataset, starting building model...")
+    print("Loading dataset...")
+    dataset = load_dataset("bookcorpus/bookcorpus", trust_remote_code=True)["train"]
+    print("Done loading dataset, starting building model...")
     # create_entries_db(dataset=dataset, start_index=33164770)
     # update_model()
-    # disambiguate_dataset(dataset=dataset, model_path=config().dest_path, )\
-    CompactBert2VecModel.convert_from_path(source_path=config().dest_path, dest_path=config().compact_dest_path)
+    # replace_tokens(model_path=config().compact_dest_path)
+    disambiguate_dataset(dataset=dataset, model_path=config().compact_dest_path, compact=True)
+    # CompactBert2VecModel.convert_from_path(source_path=config().dest_path, dest_path=config().compact_dest_path)
 
 
 if __name__ == "__main__":
