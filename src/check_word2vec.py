@@ -1,21 +1,24 @@
 """Utilities for exploring Word2Vec analogies.
 
-This module provides a small command line interface for loading a trained
-Word2Vec model and experimenting with vector arithmetic such as the classic
-``king - man + woman`` analogy.  It can list the closest words to the
-resulting vector as well as report how similar a specific word is to the
-analogy result and how many words rank above it.
+This module exposes helpers for loading a trained Word2Vec model and
+experimenting with vector arithmetic such as the classic ``king - man +
+woman`` analogy.  It can list the closest words to the resulting vector as
+well as report how similar a specific word is to the analogy result and how
+many words rank above it.
 """
 
 from __future__ import annotations
 
-import argparse
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Sequence
 
 import numpy as np
 from gensim.models import Word2Vec
 from gensim.models.keyedvectors import KeyedVectors
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.word2vec_config import word2vec_config
 
@@ -79,14 +82,52 @@ def expression_vector(kv: KeyedVectors, tokens: Sequence[str]) -> np.ndarray:
     return result
 
 
-def closest_words(kv: KeyedVectors, vector: np.ndarray, topn: int) -> list[tuple[str, float, float]]:
+def _expression_words(tokens: Iterable[str]) -> set[str]:
+    """Return the set of distinct words referenced by ``tokens``."""
+
+    words: set[str] = set()
+    for token in tokens:
+        _, word = _token_sign(token)
+        if word:
+            words.add(word)
+    return words
+
+
+def closest_words(
+    kv: KeyedVectors,
+    vector: np.ndarray,
+    topn: int,
+    *,
+    exclude: Iterable[str] | None = None,
+) -> list[tuple[str, float, float]]:
     """Return the top-N closest words to ``vector``.
 
     The return value is a list of tuples ``(word, similarity, distance)`` where
     ``distance`` is defined as ``1 - similarity``.
     """
 
-    closest = kv.similar_by_vector(vector, topn=topn)
+    if topn <= 0 or len(kv) == 0:
+        return []
+
+    excluded = {word for word in (exclude or ()) if word in kv}
+    fetch = min(len(kv), topn + len(excluded) or 1)
+    closest: list[tuple[str, float]] = []
+
+    while True:
+        candidates = kv.similar_by_vector(vector, topn=fetch)
+        filtered = [(word, similarity) for word, similarity in candidates if word not in excluded]
+
+        if len(filtered) >= topn or fetch == len(kv):
+            closest = filtered[:topn]
+            break
+
+        # Increase the fetch size in an attempt to collect enough candidates.
+        new_fetch = min(len(kv), max(fetch + len(excluded), fetch * 2))
+        if new_fetch == fetch:
+            closest = filtered
+            break
+        fetch = new_fetch
+
     return [(word, similarity, 1.0 - similarity) for word, similarity in closest]
 
 
@@ -116,57 +157,105 @@ def load_model(path: Path) -> KeyedVectors:
     return model.wv
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Explore Word2Vec analogies")
-    parser.add_argument(
-        "tokens",
-        nargs="+",
-        help="Expression tokens such as 'king', '-man', '+woman'. The first token may omit the '+' sign.",
-    )
-    parser.add_argument(
-        "--model",
-        type=Path,
-        default=word2vec_config().output_model,
-        help="Path to the trained Word2Vec model (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--topn",
-        type=int,
-        default=10,
-        help="Number of closest words to display (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--rank",
-        dest="rank_words",
-        nargs="*",
-        default=(),
-        help="Optional list of words to evaluate against the analogy result",
-    )
-    return parser
+@dataclass(slots=True)
+class ClosestWord:
+    """Representation of a word closest to an analogy expression."""
+
+    word: str
+    similarity: float
+    distance: float
 
 
-def main(argv: Iterable[str] | None = None) -> None:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+@dataclass(slots=True)
+class RankedWord:
+    """Representation of a ranked comparison word."""
 
-    kv = load_model(args.model)
-    vector = expression_vector(kv, args.tokens)
+    word: str
+    similarity: float
+    rank: int
+    more_similar_count: int
 
-    print(f"Loaded model with {len(kv):,} words from {args.model}")
-    print("Expression:", " ".join(args.tokens))
 
-    print(f"\nTop {args.topn} closest words:")
-    for rank, (word, similarity, distance) in enumerate(closest_words(kv, vector, args.topn), start=1):
-        print(f"{rank:>2}. {word:<20} similarity={similarity:.4f} distance={distance:.4f}")
+@dataclass(slots=True)
+class AnalogyEvaluation:
+    """Container for the results of evaluating an analogy expression."""
 
-    for word in args.rank_words:
-        similarity, rank, more_similar = rank_word(kv, vector, word)
-        print(
-            f"\nWord '{word}' similarity: {similarity:.4f}\n"
-            f"Rank: {rank} (there are {more_similar} words with a higher similarity)"
+    expression: tuple[str, ...]
+    vector: np.ndarray
+    closest: list[ClosestWord]
+    ranked_words: list[RankedWord]
+
+
+class CheckWord2VecConfig(BaseSettings):
+    """Settings controlling the Word2Vec analogy exploration helpers."""
+
+    model_config = SettingsConfigDict(env_prefix="CHECK_WORD2VEC_")
+
+    model_path: Path = Field(default_factory=lambda: word2vec_config().output_model)
+    tokens: tuple[str, ...] = Field(default_factory=tuple)
+    topn: int = 10
+    rank_words: tuple[str, ...] = Field(default_factory=tuple)
+    exclude_expression_words: bool = True
+
+
+@lru_cache
+def check_word2vec_config() -> "CheckWord2VecConfig":
+    """Return a cached instance of :class:`CheckWord2VecConfig`."""
+
+    return CheckWord2VecConfig()
+
+
+def evaluate_expression(
+    kv: KeyedVectors,
+    tokens: Sequence[str],
+    *,
+    topn: int = 10,
+    rank_words: Sequence[str] = (),
+    exclude_expression_words: bool = True,
+) -> AnalogyEvaluation:
+    """Evaluate an analogy expression using the provided keyed vectors."""
+
+    vector = expression_vector(kv, tokens)
+    excluded_words = _expression_words(tokens) if exclude_expression_words else set()
+
+    closest = [
+        ClosestWord(word=word, similarity=similarity, distance=distance)
+        for word, similarity, distance in closest_words(
+            kv,
+            vector,
+            topn,
+            exclude=excluded_words,
         )
+    ]
+
+    ranked = [
+        RankedWord(word=word, similarity=similarity, rank=rank, more_similar_count=more_similar)
+        for word in rank_words
+        for similarity, rank, more_similar in (rank_word(kv, vector, word),)
+    ]
+
+    return AnalogyEvaluation(
+        expression=tuple(tokens),
+        vector=vector,
+        closest=closest,
+        ranked_words=ranked,
+    )
 
 
-if __name__ == "__main__":
-    main()
+def evaluate_from_settings(settings: CheckWord2VecConfig | None = None) -> AnalogyEvaluation:
+    """Evaluate an analogy expression using the provided settings object."""
+
+    settings = settings or check_word2vec_config()
+
+    if not settings.tokens:
+        raise ValueError("At least one token must be supplied in the settings")
+
+    kv = load_model(settings.model_path)
+    return evaluate_expression(
+        kv,
+        settings.tokens,
+        topn=settings.topn,
+        rank_words=settings.rank_words,
+        exclude_expression_words=settings.exclude_expression_words,
+    )
 
