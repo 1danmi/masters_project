@@ -10,17 +10,14 @@ many words rank above it.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Sequence
 
 import numpy as np
 from gensim.models import Word2Vec
 from gensim.models.keyedvectors import KeyedVectors
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from src.word2vec_config import word2vec_config
+from src.check_word2vec_config import CheckWord2VecConfig, check_word2vec_config
 
 
 def _token_sign(token: str) -> tuple[int, str]:
@@ -186,25 +183,6 @@ class AnalogyEvaluation:
     ranked_words: list[RankedWord]
 
 
-class CheckWord2VecConfig(BaseSettings):
-    """Settings controlling the Word2Vec analogy exploration helpers."""
-
-    model_config = SettingsConfigDict(env_prefix="CHECK_WORD2VEC_")
-
-    model_path: Path = Field(default_factory=lambda: word2vec_config().output_model)
-    tokens: tuple[str, ...] = Field(default_factory=tuple)
-    topn: int = 10
-    rank_words: tuple[str, ...] = Field(default_factory=tuple)
-    exclude_expression_words: bool = True
-
-
-@lru_cache
-def check_word2vec_config() -> "CheckWord2VecConfig":
-    """Return a cached instance of :class:`CheckWord2VecConfig`."""
-
-    return CheckWord2VecConfig()
-
-
 def evaluate_expression(
     kv: KeyedVectors,
     tokens: Sequence[str],
@@ -258,4 +236,37 @@ def evaluate_from_settings(settings: CheckWord2VecConfig | None = None) -> Analo
         rank_words=settings.rank_words,
         exclude_expression_words=settings.exclude_expression_words,
     )
+
+
+def main() -> None:
+    """Run an example analogy evaluation."""
+
+    settings = check_word2vec_config()
+    example_settings = settings.model_copy(
+        update={
+            "tokens": ("king", "-man", "+woman"),
+            "rank_words": ("queen",),
+        }
+    )
+
+    evaluation = evaluate_from_settings(example_settings)
+
+    expression = " ".join(evaluation.expression)
+    print(f"Analogy expression: {expression}")
+    print("\nClosest words:")
+    for item in evaluation.closest:
+        print(f"  {item.word}: similarity={item.similarity:.4f}, distance={item.distance:.4f}")
+
+    if evaluation.ranked_words:
+        print("\nRanked targets:")
+        for ranked in evaluation.ranked_words:
+            print(
+                "  "
+                f"{ranked.word}: similarity={ranked.similarity:.4f}, "
+                f"rank={ranked.rank}, more_similar={ranked.more_similar_count}"
+            )
+
+
+if __name__ == "__main__":
+    main()
 
