@@ -1,0 +1,129 @@
+{
+  "jaguar": [
+    [
+      "car",
+      "expensive",
+      "drive",
+      "buy"
+    ],
+    [
+      "hunt",
+      "fur",
+      "animal"
+    ]
+  ],
+  "python": [
+    [
+      "program",
+      "code",
+      "algorithm"
+    ],
+    [
+      "snake",
+      "venom",
+      "forest"
+    ]
+  ],
+  "bear": [
+    [
+      "black",
+      "polar",
+      "big"
+    ],
+    [
+      "pain",
+      "hurt",
+      "feel"
+    ]
+  ],
+  "converse": [
+    [
+      "brand",
+      "shoe",
+      "leg"
+    ],
+    [
+      "person",
+      "with",
+      "chat",
+      "loud"
+    ]
+  ],
+  "bank": [
+    [
+      "water",
+      "stream",
+      "river"
+    ],
+    [
+      "money",
+      "deposit",
+      "account"
+    ]
+  ],
+  "left": [
+    [
+      "hand",
+      "side",
+      "turn"
+    ],
+    [
+      "home",
+      "early",
+      "friend"
+    ]
+  ],
+  "beat": [
+    [
+      "rhythm",
+      "dance",
+      "music",
+      "song"
+    ],
+    [
+      "pain",
+      "hurt",
+      "feel",
+      "punch"
+    ]
+  ],
+  "present": [
+    [
+      "himself",
+      "show",
+      "demonstrate",
+      "presentation"
+    ],
+    [
+      "birthday",
+      "party",
+      "give",
+      "gave"
+    ]
+  ],
+  "seal": [
+    [
+      "jar",
+      "envelope",
+      "lamb"
+    ],
+    [
+      "fish",
+      "sea",
+      "water"
+    ]
+  ],
+  "train": [
+    [
+      "ticket",
+      "rail",
+      "station"
+    ],
+    [
+      "soccer",
+      "hard",
+      "weight",
+      "gym"
+    ]
+  ]
+}
