@@ -17,6 +17,7 @@ class CheckWord2VecConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CHECK_WORD2VEC_")
 
     model_path: Path = Field(default_factory=lambda: word2vec_config().output_model)
+    pretrained_name: str | None = None
     tokens: tuple[str, ...] = Field(default_factory=tuple)
     topn: int = 10
     rank_words: tuple[str, ...] = Field(default_factory=tuple)

@@ -1,10 +1,11 @@
 """Utilities for exploring Word2Vec analogies.
 
-This module exposes helpers for loading a trained Word2Vec model and
-experimenting with vector arithmetic such as the classic ``king - man +
-woman`` analogy.  It can list the closest words to the resulting vector as
-well as report how similar a specific word is to the analogy result and how
-many words rank above it.
+This module exposes helpers for loading a trained Word2Vec model—or popular
+pretrained embeddings such as Word2Vec, GloVe, or FastText via
+``gensim.downloader``—and experimenting with vector arithmetic such as the
+classic ``king - man + woman`` analogy.  It can list the closest words to the
+resulting vector as well as report how similar a specific word is to the analogy
+result and how many words rank above it.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 import numpy as np
+from gensim import downloader as gensim_downloader
 from gensim.models import Word2Vec
 from gensim.models.keyedvectors import KeyedVectors
 
@@ -147,8 +149,29 @@ def rank_word(kv: KeyedVectors, vector: np.ndarray, word: str) -> tuple[float, i
     return similarity, rank, more_similar
 
 
-def load_model(path: Path) -> KeyedVectors:
-    """Load the Word2Vec model from ``path`` and return its keyed vectors."""
+def load_model(path: Path | None = None, *, pretrained: str | None = None) -> KeyedVectors:
+    """Load keyed vectors from a trained or pretrained Word2Vec model.
+
+    Parameters
+    ----------
+    path:
+        Filesystem path to a saved :class:`~gensim.models.Word2Vec` model.
+        Required when ``pretrained`` is not provided.
+    pretrained:
+        Name of a pretrained model available via :mod:`gensim.downloader`, such
+        as ``"word2vec-google-news-300"``, ``"glove-wiki-gigaword-300"`` or
+        ``"fasttext-wiki-news-subwords-300"``.  When supplied, the pretrained
+        vectors are downloaded (if needed) and returned.
+    """
+
+    if pretrained:
+        vectors = gensim_downloader.load(pretrained)
+        if isinstance(vectors, Word2Vec):
+            return vectors.wv
+        return vectors
+
+    if path is None:
+        raise ValueError("A model path must be provided when no pretrained name is supplied")
 
     model = Word2Vec.load(str(path))
     return model.wv
@@ -228,7 +251,10 @@ def evaluate_from_settings(settings: CheckWord2VecConfig | None = None) -> Analo
     if not settings.tokens:
         raise ValueError("At least one token must be supplied in the settings")
 
-    kv = load_model(settings.model_path)
+    kv = load_model(
+        settings.model_path if settings.pretrained_name is None else None,
+        pretrained=settings.pretrained_name,
+    )
     return evaluate_expression(
         kv,
         settings.tokens,
