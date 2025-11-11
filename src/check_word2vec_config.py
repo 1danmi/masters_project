@@ -24,11 +24,4 @@ class CheckWord2VecConfig(BaseSettings):
     exclude_expression_words: bool = True
 
 
-@lru_cache
-def check_word2vec_config() -> "CheckWord2VecConfig":
-    """Return a cached instance of :class:`CheckWord2VecConfig`."""
-
-    return CheckWord2VecConfig()
-
-
-__all__ = ["CheckWord2VecConfig", "check_word2vec_config"]
+__all__ = ["CheckWord2VecConfig"]

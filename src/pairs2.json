@@ -1,0 +1,142 @@
+{
+  "bear": [
+    [
+      "black",
+      "polar",
+      "big"
+    ],
+    [
+      "pain",
+      "hurt",
+      "feel"
+    ]
+  ],
+  "converse": [
+    [
+      "sneakers",
+      "jeans",
+      "shoes",
+      "pair"
+    ],
+    [
+      "with",
+      "said",
+      "about"
+    ]
+  ],
+  "bank": [
+    [
+      "water",
+      "stream",
+      "river"
+    ],
+    [
+      "money",
+      "deposit",
+      "account"
+    ]
+  ],
+  "left": [
+    [
+      "hand",
+      "side",
+      "turn"
+    ],
+    [
+      "arm",
+      "foot",
+      "shoulder"
+    ]
+  ],
+  "beat": [
+    [
+      "rhythm",
+      "dance",
+      "music",
+      "song"
+    ],
+    [
+      "pain",
+      "hurt",
+      "feel",
+      "punch"
+    ]
+  ],
+  "present": [
+    [
+      "future",
+      "past",
+      "live",
+      "back"
+    ],
+    [
+      "birthday",
+      "gift",
+      "give",
+      "gave"
+    ]
+  ],
+  "train": [
+    [
+      "ticket",
+      "rail",
+      "station"
+    ],
+    [
+      "help",
+      "fight",
+      "learn",
+      "battle"
+    ]
+  ],
+  "light": [
+    [
+      "feather",
+      "cotton",
+      "butterfly"
+    ],
+    [
+      "dark",
+      "blue",
+      "hair"
+    ]
+  ],
+  "match": [
+    [
+      "light",
+      "fire",
+      "flame"
+    ],
+    [
+      "perfect",
+      "making",
+      "together"
+    ]
+  ],
+  "watch": [
+    [
+      "wrist",
+      "pocket",
+      "timer",
+      "ticking"
+    ],
+    [
+      "saw",
+      "look",
+      "over",
+      "glance"
+    ]
+  ],
+  "letter": [
+    [
+      "alphabet",
+      "capital",
+      "font"
+    ],
+    [
+      "message",
+      "address",
+      "write"
+    ]
+  ]
+}

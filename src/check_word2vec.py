@@ -19,7 +19,7 @@ from gensim import downloader as gensim_downloader
 from gensim.models import Word2Vec
 from gensim.models.keyedvectors import KeyedVectors
 
-from src.check_word2vec_config import CheckWord2VecConfig, check_word2vec_config
+from src.check_word2vec_config import CheckWord2VecConfig
 
 
 def _token_sign(token: str) -> tuple[int, str]:
@@ -246,7 +246,7 @@ def evaluate_expression(
 def evaluate_from_settings(settings: CheckWord2VecConfig | None = None) -> AnalogyEvaluation:
     """Evaluate an analogy expression using the provided settings object."""
 
-    settings = settings or check_word2vec_config()
+    settings = settings or CheckWord2VecConfig()
 
     if not settings.tokens:
         raise ValueError("At least one token must be supplied in the settings")
@@ -267,15 +267,13 @@ def evaluate_from_settings(settings: CheckWord2VecConfig | None = None) -> Analo
 def main() -> None:
     """Run an example analogy evaluation."""
 
-    settings = check_word2vec_config()
-    example_settings = settings.model_copy(
-        update={
-            "tokens": ("king", "-man", "+woman"),
-            "rank_words": ("queen",),
-        }
+    settings = CheckWord2VecConfig(
+        model_path=Path("models/original-300.w2v"),
+        tokens=("king", "-man", "+woman"),
+        rank_words= ("queen",)
     )
 
-    evaluation = evaluate_from_settings(example_settings)
+    evaluation = evaluate_from_settings(settings)
 
     expression = " ".join(evaluation.expression)
     print(f"Analogy expression: {expression}")
@@ -287,7 +285,6 @@ def main() -> None:
         print("\nRanked targets:")
         for ranked in evaluation.ranked_words:
             print(
-                "  "
                 f"{ranked.word}: similarity={ranked.similarity:.4f}, "
                 f"rank={ranked.rank}, more_similar={ranked.more_similar_count}"
             )

@@ -168,6 +168,16 @@ class Bert2VecModel:
         result = self.get_entries_by_bow_bm25(token=token, bow=bow, max_results=1)
         return result[0][0] if result else None
 
+    def get_entry_idx_by_bow(self, token: str, bow: list[str]) -> int | None:
+        entries = self._embeddings.get(token)
+        if not entries:
+            return None
+
+        closest_entry = self.get_entry_by_bow(token=token, bow=bow)
+        if not closest_entry:
+            return None
+        return next(j for j, e in enumerate(entries) if e == closest_entry)
+
     def get_entry_by_vec(self, token: str, vec: np.ndarray) -> tuple[TokenEntry | None, float]:
         entries = self._embeddings.get(token, [])
         closest_entry = None
